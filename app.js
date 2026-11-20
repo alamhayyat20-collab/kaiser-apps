@@ -1464,6 +1464,7 @@
     const u = me();
     if (!bolehDaftar(u)) return viewPekerjaSenarai();
     return adminShell('pekerja', `<h1>Daftar pekerja</h1>${pekerjaNav('daftar')}
+      ${kumpulanList().length ? '' : `<div class="notice bad"><b>Belum ada kumpulan kerja.</b> Cipta kumpulan dahulu di <a href="#a-pekerja-jawatan">Jawatan, templat &amp; kumpulan</a>${utama(u) ? ', atau jalankan <a href="#a-tetapan">Migrasi</a> di Tetapan' : ''}.</div>`}
       <form class="card stack" data-form="daftarPekerja">
         <h2>Borang kerja</h2>
         ${borangKerja({ staffId: nextStaffId(), jenis: 'Tetap', kumpulanId: (kumpulanList().find((k) => dalamSkop(u, k.id)) || {}).id }, { baru: true })}
