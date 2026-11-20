@@ -64,6 +64,15 @@ service cloud.firestore {
       allow update: if active() && own(resource.data) && own(request.resource.data);
     }
 
+    // Permohonan staf: cuti, tuntutan, petty cash, pendahuluan gaji.
+    match /mohon/{id} {
+      allow read: if isAdmin() || (active() && own(resource.data));
+      allow create: if active() && own(request.resource.data) && request.resource.data.status == 'dihantar';
+      allow update: if (isAdmin() && resource.data.userId != request.auth.uid)
+        || (active() && own(resource.data) && own(request.resource.data)
+            && resource.data.status == 'dihantar' && request.resource.data.status == 'dibatalkan');
+    }
+
     match /tunai/{id} { allow read, create: if isAdmin(); }
     match /kiraan/{id} { allow read, create: if isAdmin(); }
 

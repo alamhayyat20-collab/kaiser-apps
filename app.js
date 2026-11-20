@@ -17,8 +17,8 @@
     { id: 'tenaga', nama: 'Bekalan tenaga kerja', pendek: 'Tenaga kerja' },
   ];
   const VO_STATUS = ['Sedang dijalankan', 'Menunggu sebut harga', 'Sebut harga dihantar', 'PO diterima', 'Diinvois', 'Dibayar'];
-  const PERANAN = { penyelia: 'Penyelia', pengurus: 'Pengurus', pengarah: 'Pengarah', akaun: 'Akaun' };
-  const STATUS_LABEL = { dihantar: 'Dihantar', disahkan: 'Disahkan', diluluskan: 'Diluluskan', dikembalikan: 'Dikembalikan' };
+  const PERANAN = { pekerja: 'Pekerja', penyelia: 'Penyelia', pengurus: 'Pengurus', pengarah: 'Pengarah', akaun: 'Akaun' };
+  const STATUS_LABEL = { dihantar: 'Dihantar', disahkan: 'Disahkan', diluluskan: 'Diluluskan', dikembalikan: 'Dikembalikan', ditolak: 'Ditolak', dibatalkan: 'Dibatalkan', dibayar: 'Dibayar', dijelaskan: 'Dijelaskan' };
   const DB_KEY = 'kaiser_app_v1';
   const USER_KEY = 'kaiser_app_user';
 
@@ -66,6 +66,7 @@
       { id: 'u3', nama: 'Iskandar', peranan: 'penyelia' },
       { id: 'u4', nama: 'Husni Yahya', peranan: 'penyelia' },
       { id: 'u5', nama: 'Akaun Kaiser', peranan: 'akaun' },
+      { id: 'u6', nama: 'Muhd Nasrun', peranan: 'pekerja', tarikhMula: '2012-03-01' },
     ];
     const kod = [
       ['FPG-26-CV-001', 'Pembaikan longkang dan konkrit', 'sivil', 30000],
@@ -91,6 +92,10 @@
       v: 1,
       settings: { klien: 'FPG Oleochemicals Sdn. Bhd.', tapak: 'FPG Oleochemicals, Kuantan', prefix: 'FPG-26', hadTunai: 200, imprest: 2000 },
       users, kod, belian, laporan, hadir: [],
+      mohon: [
+        { id: uid(), jenis: 'cuti', userId: 'u6', tarikh: d(2), jenisCuti: 'Tahunan', mula: d(20), tamat: d(21), hari: 2, sebab: 'Urusan keluarga (contoh)', lampiran: [], status: 'dihantar', nota: '', history: [] },
+        { id: uid(), jenis: 'tuntutan', userId: 'u3', tarikh: d(3), jenisTuntutan: 'Tol & parkir', tarikhBelanja: d(3), jumlah: 18.4, keterangan: 'Tol ke pembekal Gebeng (contoh)', kodId: 'k1', resitT: [], status: 'dihantar', nota: '', history: [] },
+      ],
       tunai: [{ id: uid(), tarikh: d(1), jumlah: 2000, catatan: 'Imprest awal (contoh)', oleh: 'u5' }],
       kiraan: [], audit: [],
     };
@@ -100,7 +105,7 @@
   // Jika fail firebase-config.js dan SDK Firebase dimuatkan, apps guna Firestore. Jika tidak, mod demo (localStorage).
   const CFG = window.KAISER_FIREBASE;
   const CLOUD = !!(CFG && window.firebase && window.firebase.initializeApp);
-  const DEFAULT_SETTINGS = { klien: 'FPG Oleochemicals Sdn. Bhd.', tapak: 'FPG Oleochemicals, Kuantan', prefix: 'FPG-26', hadTunai: 200, imprest: 2000 };
+  const DEFAULT_SETTINGS = { klien: 'FPG Oleochemicals Sdn. Bhd.', tapak: 'FPG Oleochemicals, Kuantan', prefix: 'FPG-26', hadTunai: 200, imprest: 2000, waktuMasuk: '08:00', tapakLat: '', tapakLng: '', radius: 500, kadarKm: 0, hadPendahuluan: 500, hariJelasPetty: 7 };
   let fs = null, auth = null;
   const imgCache = {};
   const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
@@ -120,7 +125,7 @@
     stop() { this.unsubs.forEach((u) => { try { u(); } catch (e) { /* abaikan */ } }); this.unsubs = []; },
     subscribe(u) {
       this.stop();
-      const admin = u.peranan !== 'penyelia';
+      const admin = !['penyelia', 'pekerja'].includes(u.peranan);
       const listen = (coll, q) => {
         this.unsubs.push(q.onSnapshot((snap) => {
           db[coll] = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
@@ -129,12 +134,12 @@
       };
       listen('users', fs.collection('users'));
       listen('kod', fs.collection('kod'));
-      ['laporan', 'belian', 'hadir'].forEach((c) => listen(c, admin ? fs.collection(c) : fs.collection(c).where('userId', '==', u.id)));
+      ['laporan', 'belian', 'hadir', 'mohon'].forEach((c) => listen(c, admin ? fs.collection(c) : fs.collection(c).where('userId', '==', u.id)));
       if (admin) { listen('tunai', fs.collection('tunai')); listen('kiraan', fs.collection('kiraan')); }
       this.unsubs.push(fs.collection('settings').doc('main').onSnapshot((d) => { db.settings = Object.assign({}, DEFAULT_SETTINGS, d.exists ? d.data() : {}); scheduleRender(); }, () => {}));
     },
   };
-  function emptyDb() { return { v: 1, settings: Object.assign({}, DEFAULT_SETTINGS), users: [], kod: [], belian: [], laporan: [], hadir: [], tunai: [], kiraan: [], audit: [] }; }
+  function emptyDb() { return { v: 1, settings: Object.assign({}, DEFAULT_SETTINGS), users: [], kod: [], belian: [], laporan: [], hadir: [], mohon: [], tunai: [], kiraan: [], audit: [] }; }
 
   // Simpan gambar draf: mod awan → dokumen berasingan dalam koleksi `gambar`, rekod hanya simpan id.
   function persistPhotos(arr) {
@@ -165,12 +170,14 @@
   }
 
   let db = CLOUD ? emptyDb() : (Store.load() || seed());
+  db.mohon = db.mohon || [];
+  db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings);
   const state = { userId: CLOUD ? null : Store.getUser(), draft: null, bulan: thisMonth(), modal: null, screen: CLOUD ? 'loading' : null, authUser: null };
   const me = () => db.users.find((u) => u.id === state.userId) || null;
   const userName = (id) => (db.users.find((u) => u.id === id) || {}).nama || '—';
   const kodOf = (id) => db.kod.find((k) => k.id === id) || null;
   const skopOf = (id) => SKOP.find((s) => s.id === id) || { nama: '—', pendek: '—' };
-  const isAdmin = (u) => u && u.peranan !== 'penyelia';
+  const isAdmin = (u) => u && !['penyelia', 'pekerja'].includes(u.peranan);
 
   // changes: senarai [koleksi, rekod] yang berubah (untuk mod awan).
   function commit(act, ref, changes) {
@@ -283,6 +290,10 @@
     vo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>',
     senarai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>',
     jam: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    cuti: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    tuntut: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+    dompet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M16 13h2M3 10h18"/></svg>',
+    wang: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>',
     kamera: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/></svg>',
   };
 
@@ -339,28 +350,38 @@
     const lapToday = mine(db.laporan).filter((x) => x.tarikh === t).length;
     const resToday = mine(db.belian).filter((x) => x.tarikh === t).length;
     const back = mine(db.belian).concat(mine(db.laporan)).filter((x) => x.status === 'dikembalikan');
+    const bc = bakiCuti(u);
+    const aktifMohon = mine(db.mohon).filter((m) => stepOf(m)).length;
+    const pettyBelum = mine(db.mohon).filter((m) => m.jenis === 'pettycash' && m.status === 'dibayar');
+    const isSv = u.peranan !== 'pekerja';
     const recent = mine(db.laporan).map((x) => ({ x, t: 'laporan' })).concat(mine(db.belian).map((x) => ({ x, t: 'belian' })))
       .sort((a, b) => (a.x.tarikh < b.x.tarikh ? 1 : -1)).slice(0, 5);
     let clock;
-    if (!h) clock = `<button class="clock in" data-a="masuk">${I.jam} Masuk Kerja</button>`;
-    else if (!h.keluar) clock = `<button class="clock out" data-a="keluar">${I.jam} Keluar Kerja <span class="small" style="font-weight:500">(masuk ${esc(h.masuk)})</span></button>`;
+    if (!h) clock = `<a class="clock in" href="#hadir" style="text-decoration:none">${I.jam} Masuk Kerja</a>`;
+    else if (!h.keluar) clock = `<a class="clock out" href="#hadir" style="text-decoration:none">${I.jam} Keluar Kerja <span class="small" style="font-weight:500">(masuk ${esc(h.masuk)})</span></a>`;
     else clock = `<div class="card small">Hari ini: masuk ${esc(h.masuk)}, keluar ${esc(h.keluar)}.</div>`;
     return `${topbar('Apps Pekerja')}
     <main class="wrap">
       ${navigator.onLine ? '' : '<div class="notice">Luar talian. Rekod disimpan dalam telefon dan akan dihantar bila ada liputan.</div>'}
       ${CLOUD ? '' : '<div class="notice small">Mod demo: data hanya dalam pelayar ini.</div>'}
       ${back.length ? `<a class="notice bad" href="#rekod" style="text-decoration:none"><b>${back.length} rekod dikembalikan</b> untuk pembetulan. Tekan untuk lihat.</a>` : ''}
+      ${pettyBelum.length ? `<a class="notice" href="#permohonan" style="text-decoration:none"><b>Petty cash ${rm(pettyBelum.reduce((a, m) => a + num(m.jumlah), 0))} belum dijelaskan.</b> Hantar resit belian dan pulangkan baki.</a>` : ''}
       <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-        <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${lapToday}</div><div class="l">Laporan hari ini</div></div>
-        <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${resToday}</div><div class="l">Resit hari ini</div></div>
+        <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${bc.Tahunan}</div><div class="l">Baki cuti tahunan</div></div>
+        <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${aktifMohon}</div><div class="l">Permohonan aktif</div></div>
         <div class="card kpi" style="text-align:center;padding:10px"><div class="v" style="color:${back.length ? 'var(--bad)' : 'var(--ink)'}">${back.length}</div><div class="l">Dikembalikan</div></div>
       </div>
       ${clock}
       <div class="tiles">
         <a class="tile" href="#laporan">${I.lapor}<span>Laporan Kerja</span></a>
-        <a class="tile" href="#belian">${I.resit}<span>Belian / Resit</span></a>
-        <a class="tile" href="#vo">${I.vo}<span>Arahan Kerja Tambahan</span></a>
-        <a class="tile" href="#rekod">${I.senarai}<span>Rekod Saya</span></a>
+        ${isSv ? `<a class="tile" href="#belian">${I.resit}<span>Belian / Resit</span></a>
+        <a class="tile" href="#vo">${I.vo}<span>Arahan Kerja Tambahan</span></a>` : ''}
+        <a class="tile" href="#mohon-cuti">${I.cuti}<span>Mohon Cuti</span></a>
+        <a class="tile" href="#mohon-tuntutan">${I.tuntut}<span>Tuntutan</span></a>
+        <a class="tile" href="#mohon-pettycash">${I.dompet}<span>Petty Cash</span></a>
+        <a class="tile" href="#mohon-pendahuluan">${I.wang}<span>Pendahuluan Gaji</span></a>
+        <a class="tile" href="#permohonan">${I.senarai}<span>Permohonan Saya</span></a>
+        <a class="tile" href="#rekod">${I.senarai}<span>Rekod Kerja Saya</span></a>
       </div>
       <h2>Rekod terkini</h2>
       <div class="stack" style="gap:8px">${recent.length ? recent.map(({ x, t: ty }) => {
@@ -379,10 +400,10 @@
     }).join('');
   }
 
-  function photoGrid(field, caps) {
+  function photoGrid(field, caps, capture) {
     const arr = state.draft[field] || [];
     const tiles = arr.map((p, i) => `<div class="ph"><img ${imgAttr(p)} alt=""${esc(p.cap || 'Gambar')}"><button type="button" class="x" data-a="rmPhoto" data-f="${field}" data-i="${i}" aria-label="Buang gambar">×</button>${p.cap ? `<span class="cap">${esc(p.cap)}</span>` : ''}</div>`).join('');
-    const adds = (caps || ['']).map((c) => `<label class="addph">${I.kamera}<span>${c ? 'Gambar ' + esc(c.toLowerCase()) : 'Tambah gambar'}</span><input type="file" accept="image/*" capture="environment" data-file="${field}" data-cap="${esc(c)}"></label>`).join('');
+    const adds = (caps || ['']).map((c) => `<label class="addph">${I.kamera}<span>${c ? 'Gambar ' + esc(c.toLowerCase()) : 'Tambah gambar'}</span><input type="file" accept="image/*" capture="${capture || 'environment'}" data-file="${field}" data-cap="${esc(c)}"></label>`).join('');
     return `<div class="photos" id="ph-${field}">${tiles}${adds}</div>`;
   }
 
@@ -491,6 +512,8 @@
         <div class="brand"><img src="icon-64.png" alt=""><div><b>Kaiser</b><div class="tiny" style="color:#BFD0E0">${esc(u.nama)} · ${PERANAN[u.peranan]}</div></div></div>
         ${link('dash', 'Utama')}
         ${u.peranan !== 'akaun' ? link('semak', 'Peti semakan', q ? `<span class="badge">${q}</span>` : '') : ''}
+        ${link('hadir', 'Kehadiran')}
+        ${link('mohon', 'Permohonan staf', mohonQueue(u).length ? `<span class="badge">${mohonQueue(u).length}</span>` : '')}
         ${link('skop', 'Pantauan skop kerja')}
         ${link('vo', 'Daftar VO')}
         ${link('kod', 'Kod kerja')}
@@ -527,6 +550,8 @@
         <div class="card kpi"><div class="l">VO belum dicaj (kos)</div><div class="v" style="color:var(--warn)">${rm0(voBelumDicaj())}</div></div>
         <div class="card kpi"><div class="l">Bendera merah terbuka</div><div class="v" style="color:${flagged ? 'var(--bad)' : 'var(--ink)'}">${flagged}</div></div>
         <div class="card kpi"><div class="l">Baki tunai runcit</div><div class="v">${rm0(tn.baki)}</div></div>
+        <div class="card kpi"><div class="l">Hadir hari ini</div><div class="v">${db.hadir.filter((h) => h.tarikh === today()).length} / ${fieldUsers().length}</div></div>
+        <div class="card kpi"><div class="l">Permohonan staf menunggu anda</div><div class="v">${mohonQueue(u).length}</div></div>
       </div>
       <section class="stack"><div class="row between"><h2>Pantauan skop kerja</h2><span class="muted small">Tekan skop untuk butiran</span></div>${skopGrid(ym)}</section>
       ${u.peranan !== 'akaun' ? `<section class="card stack"><div class="row between"><h2>Peti semakan</h2><a class="btn sm" href="#a-semak">Lihat semua</a></div>${queueTable(q.slice(0, 6))}</section>` : ''}
@@ -656,6 +681,7 @@
         <button class="btn primary" data-a="csv" data-v="ringkasan">Muat turun ringkasan kod kerja (CSV)</button>
         <button class="btn" data-a="csv" data-v="belian">Senarai belian (CSV)</button>
         <button class="btn" data-a="csv" data-v="laporan">Senarai laporan &amp; jam (CSV)</button>
+        <button class="btn" data-a="csv" data-v="gaji">Ringkasan gaji staf (CSV)</button>
       </div>
       <section class="card stack"><h2>Ringkasan ${monthName(ym)}</h2><div class="tbl"><table><thead><tr><th>Kod</th><th>Penerangan</th><th>Skop</th><th>Jenis</th><th class="n">Jam</th><th class="n">Kos bahan / belian</th></tr></thead><tbody>
       ${kods.map(({ k, kos, jam }) => `<tr><td>${esc(k.kod)}</td><td>${esc(k.penerangan)}</td><td>${esc(skopOf(k.skop).pendek)}</td><td>${esc(k.jenis)}</td><td class="n">${jam}</td><td class="n">${rm(kos)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Tiada rekod bulan ini.</td></tr>'}
@@ -672,21 +698,478 @@
           <label class="f">Awalan kod<input class="i" name="prefix" value="${esc(s.prefix)}"></label>
           <label class="f">Had belian tunai sekali beli (RM)<input class="i" type="number" name="hadTunai" value="${esc(s.hadTunai)}"></label>
           <label class="f">Imprest tunai runcit (RM)<input class="i" type="number" name="imprest" value="${esc(s.imprest)}"></label>
+          <label class="f">Waktu masuk kerja<input class="i" type="time" name="waktuMasuk" value="${esc(s.waktuMasuk)}"></label>
+          <label class="f">Kadar perjalanan (RM / km)<input class="i" type="number" step="0.01" name="kadarKm" value="${esc(s.kadarKm)}"></label>
+          <label class="f">Had pendahuluan gaji (RM)<input class="i" type="number" name="hadPendahuluan" value="${esc(s.hadPendahuluan)}"></label>
+          <label class="f">Tempoh jelaskan petty cash (hari)<input class="i" type="number" name="hariJelasPetty" value="${esc(s.hariJelasPetty)}"></label>
         </div>
+        <h3>Lokasi tapak untuk kehadiran</h3>
+        <div class="grid-auto">
+          <label class="f">Latitud<input class="i" name="tapakLat" value="${esc(s.tapakLat)}" inputmode="decimal"></label>
+          <label class="f">Longitud<input class="i" name="tapakLng" value="${esc(s.tapakLng)}" inputmode="decimal"></label>
+          <label class="f">Jarak dibenarkan (meter)<input class="i" type="number" name="radius" value="${esc(s.radius)}"></label>
+        </div>
+        <div class="muted tiny">Berdiri di pintu masuk tapak dan tekan "Guna lokasi saya sekarang". Kosongkan jika tidak mahu semakan jarak.</div>
+        <div class="row"><button class="btn" type="button" data-a="lokasiTapak">Guna lokasi saya sekarang</button></div>
         <div><button class="btn primary" type="submit">Simpan tetapan</button></div>
       </form>
       <section class="card stack"><h2>Pengguna</h2>
-        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false).map((u) => `<tr><td>${esc(u.nama)}${u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${PERANAN[u.peranan]}</td><td>${u.id !== state.userId ? `<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Buang</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th>Mula kerja</th><th class="n">Hak cuti tahunan / sakit</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false).map((u) => `<tr><td>${esc(u.nama)}${u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${PERANAN[u.peranan]}</td><td>${u.tarikhMula ? fmtDate(u.tarikhMula) : '—'}</td><td class="n">${hakCuti(u).Tahunan} / ${hakCuti(u).Sakit} hari</td><td>${u.id !== state.userId ? `<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Buang</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
         <form class="row" data-form="user" style="align-items:flex-end">
           <label class="f" style="flex:1 1 200px">Nama<input class="i" name="nama" required></label>
           ${CLOUD ? `<label class="f" style="flex:1 1 220px">Emel<input class="i" type="email" name="email" required></label>
           <label class="f" style="flex:1 1 180px">Kata laluan sementara<input class="i" name="password" minlength="6" required></label>` : ''}
+          <label class="f" style="flex:1 1 160px">Tarikh mula kerja<input class="i" type="date" name="tarikhMula"></label>
           <label class="f" style="flex:1 1 160px">Peranan<select class="i" name="peranan">${Object.keys(PERANAN).map((p) => `<option value="${p}">${PERANAN[p]}</option>`).join('')}</select></label>
           <button class="btn primary" type="submit">Tambah pengguna</button>
         </form>
       </section>
       ${CLOUD ? `<section class="card stack"><h2>Sambungan</h2><div class="small">Disambung ke Firebase projek <b>${esc(CFG.projectId)}</b>.</div></section>` : `<section class="card stack"><h2>Data demo</h2><div class="muted small">Padam semua rekod dalam pelayar ini dan mula semula dengan data contoh.</div><div><button class="btn danger" data-a="reset">Set semula data demo</button></div></section>`}`);
   }
+
+  // ---------- Modul staf: kehadiran bergambar dan permohonan ----------
+  const isField = (u) => u && (u.peranan === 'penyelia' || u.peranan === 'pekerja');
+  const fieldUsers = () => db.users.filter((u) => u.aktif !== false && isField(u));
+  const MOHON = {
+    cuti: { nama: 'Permohonan cuti', pendek: 'Cuti' },
+    tuntutan: { nama: 'Tuntutan perbelanjaan', pendek: 'Tuntutan' },
+    pettycash: { nama: 'Permohonan petty cash', pendek: 'Petty cash' },
+    pendahuluan: { nama: 'Pendahuluan gaji', pendek: 'Pendahuluan gaji' },
+  };
+  const JENIS_CUTI = ['Tahunan', 'Sakit', 'Hospital', 'Kecemasan', 'Tanpa gaji', 'Bersalin / paterniti', 'Lain-lain'];
+  const JENIS_TUNTUTAN = ['Perjalanan (km)', 'Makan / elaun luar kawasan', 'Tol & parkir', 'Bahan / alat dibeli sendiri', 'Lain-lain'];
+  // Aliran kelulusan bagi setiap jenis permohonan: status semasa → langkah seterusnya.
+  const TWO_STEP = {
+    dihantar: { to: 'disahkan', who: ['pengurus', 'pengarah'], label: 'Sahkan' },
+    disahkan: { to: 'diluluskan', who: ['pengarah'], label: 'Lulus akhir' },
+    diluluskan: { to: 'dibayar', who: ['akaun', 'pengarah'], label: 'Tanda dibayar' },
+  };
+  const STEP = {
+    cuti: { dihantar: { to: 'diluluskan', who: ['pengurus', 'pengarah'], label: 'Luluskan cuti' } },
+    pendahuluan: TWO_STEP,
+    tuntutan: TWO_STEP,
+    pettycash: {
+      dihantar: { to: 'diluluskan', who: ['pengurus', 'pengarah'], label: 'Luluskan' },
+      diluluskan: { to: 'dibayar', who: ['akaun', 'pengarah'], label: 'Tanda wang diberi' },
+      dibayar: { to: 'dijelaskan', who: ['akaun', 'pengurus', 'pengarah'], label: 'Jelaskan', form: true },
+    },
+  };
+  const stepOf = (m) => (STEP[m.jenis] || {})[m.status] || null;
+  const canAct = (m, u) => { const st = stepOf(m); return !!(st && u && st.who.includes(u.peranan) && m.userId !== u.id); };
+  const canReject = (m, u) => canAct(m, u) && m.status !== 'dibayar';
+  function mohonQueue(u) { return (db.mohon || []).filter((m) => canAct(m, u)); }
+
+  const tsDate = (v) => (!v ? null : v.toDate ? v.toDate() : v.seconds ? new Date(v.seconds * 1000) : null);
+  const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
+  function kiraHari(mula, tamat) {
+    if (!mula || !tamat || tamat < mula) return 0;
+    let n = 0;
+    for (let t = Date.parse(mula); t <= Date.parse(tamat); t += 864e5) if (new Date(t).getUTCDay() !== 0) n++;
+    return n;
+  }
+  function jarakMeter(a, b) {
+    const R = 6371000, rad = (x) => (x * Math.PI) / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function tapakPoint() {
+    const lat = parseFloat(db.settings.tapakLat), lng = parseFloat(db.settings.tapakLng);
+    return isNaN(lat) || isNaN(lng) ? null : { lat, lng };
+  }
+
+  // Hak cuti minimum Akta Kerja 1955 (seksyen 60E, 60F) ikut tempoh perkhidmatan; boleh diganti per pekerja.
+  function hakCuti(u) {
+    const y = u && u.tarikhMula ? (Date.now() - Date.parse(u.tarikhMula)) / (365.25 * 864e5) : 0;
+    return {
+      Tahunan: num(u && u.cutiTahunan) || (y >= 5 ? 16 : y >= 2 ? 12 : 8),
+      Sakit: num(u && u.cutiSakit) || (y >= 5 ? 22 : y >= 2 ? 18 : 14),
+      Hospital: 60,
+    };
+  }
+  function bakiCuti(u) {
+    const yr = String(new Date().getFullYear());
+    const d = {};
+    (db.mohon || []).filter((m) => m.jenis === 'cuti' && m.userId === (u && u.id) && m.status === 'diluluskan' && (m.mula || '').startsWith(yr))
+      .forEach((m) => { d[m.jenisCuti] = (d[m.jenisCuti] || 0) + num(m.hari); });
+    const h = hakCuti(u);
+    return { Tahunan: h.Tahunan - (d.Tahunan || 0) - (d.Kecemasan || 0), Sakit: h.Sakit - (d.Sakit || 0), Hospital: h.Hospital - (d.Hospital || 0), hak: h, diambil: d };
+  }
+  function potonganBulan(m, ym) {
+    if (m.jenis !== 'pendahuluan' || m.status !== 'dibayar' || !m.bulanPotong) return 0;
+    const n = Math.max(1, num(m.ansuran) || 1), i = monthsBetween(m.bulanPotong, ym);
+    return i >= 0 && i < n ? num(m.jumlah) / n : 0;
+  }
+
+  function flagsHadir(h) {
+    const f = [];
+    if (!h) return f;
+    if (h.masuk && db.settings.waktuMasuk && h.masuk > db.settings.waktuMasuk) f.push('Lewat');
+    if (!(h.fotoMasuk || []).length) f.push('Tiada swafoto');
+    if (!h.gpsMasuk) f.push('Tiada lokasi');
+    if (num(h.jarakMasuk) > num(db.settings.radius) && tapakPoint()) f.push(`Jauh dari tapak (${Math.round(h.jarakMasuk)} m)`);
+    if (h.keluar && num(h.jarakKeluar) > num(db.settings.radius) && tapakPoint()) f.push(`Keluar jauh dari tapak (${Math.round(h.jarakKeluar)} m)`);
+    const sv = tsDate(h.masukServer);
+    if (sv) {
+      const local = Date.parse(`${h.tarikh}T${h.masuk}:00`);
+      if (Math.abs(sv.getTime() - local) > 10 * 60000) f.push('Masa telefon berbeza');
+    }
+    return f;
+  }
+  function jamHadir(h) {
+    if (!h || !h.masuk || !h.keluar) return 0;
+    const [a, b] = [h.masuk, h.keluar].map((t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)));
+    return Math.max(0, Math.round(((b - a) / 60) * 10) / 10);
+  }
+
+  function flagsMohon(m) {
+    const f = [];
+    const u = db.users.find((x) => x.id === m.userId) || {};
+    const others = (db.mohon || []).filter((o) => o.userId === m.userId && o.id !== m.id && o.jenis === m.jenis);
+    if (m.jenis === 'cuti' && m.status === 'dihantar') {
+      const b = bakiCuti(u);
+      if (['Tahunan', 'Kecemasan'].includes(m.jenisCuti) && num(m.hari) > b.Tahunan) f.push('Melebihi baki cuti tahunan');
+      if (m.jenisCuti === 'Sakit' && num(m.hari) > b.Sakit) f.push('Melebihi baki cuti sakit');
+      if (['Sakit', 'Hospital'].includes(m.jenisCuti) && !(m.lampiran || []).length) f.push('Tiada sijil cuti sakit');
+    }
+    if (m.jenis === 'pendahuluan') {
+      if (num(m.jumlah) > num(db.settings.hadPendahuluan)) f.push('Melebihi had pendahuluan');
+      const aktif = others.filter((o) => ['dihantar', 'disahkan', 'diluluskan'].includes(o.status) || (o.status === 'dibayar' && o.bulanPotong && monthsBetween(o.bulanPotong, thisMonth()) < Math.max(1, num(o.ansuran) || 1) - 1));
+      if (aktif.length) f.push('Ada pendahuluan belum selesai');
+    }
+    if (m.jenis === 'pettycash') {
+      if (others.some((o) => o.status === 'dibayar')) f.push('Petty cash lama belum dijelaskan');
+      if (m.status === 'dibayar' && m.tarikhBayar && daysBetween(m.tarikhBayar, today()) > num(db.settings.hariJelasPetty)) f.push('Lewat dijelaskan');
+    }
+    if (m.jenis === 'tuntutan') {
+      if (m.jenisTuntutan === 'Perjalanan (km)') { if (!num(m.km)) f.push('Tiada jarak perjalanan'); }
+      else if (!(m.resitT || []).length) f.push('Tiada resit');
+    }
+    return f;
+  }
+  function mohonSummary(m) {
+    if (m.jenis === 'cuti') return [`${m.jenisCuti} · ${fmtDate(m.mula)}${m.tamat !== m.mula ? ' – ' + fmtDate(m.tamat) : ''}`, `${m.hari} hari`];
+    if (m.jenis === 'pendahuluan') return [`${m.sebab || '—'} · potong ${num(m.ansuran) > 1 ? m.ansuran + ' bulan' : 'sekali'} dari ${m.bulanPotong ? monthName(m.bulanPotong) : '—'}`, rm(m.jumlah)];
+    if (m.jenis === 'pettycash') return [`${m.tujuan || '—'}${kodOf(m.kodId) ? ' · ' + kodOf(m.kodId).kod : ''}`, rm(m.jumlah)];
+    return [`${m.jenisTuntutan}${m.keterangan ? ' · ' + m.keterangan : ''}`, rm(m.jumlah)];
+  }
+
+  // ----- Apps Pekerja: kehadiran -----
+  function viewHadir() {
+    const u = me(), t = today();
+    const h = db.hadir.find((x) => x.userId === u.id && x.tarikh === t);
+    const mode = !h ? 'masuk' : !h.keluar ? 'keluar' : 'siap';
+    if (mode === 'siap') {
+      return `${topbar('Kehadiran', '#home')}<main class="wrap"><div class="card stack"><h2>Kehadiran hari ini lengkap</h2><div>Masuk ${esc(h.masuk)} · keluar ${esc(h.keluar)} · ${jamHadir(h)} jam</div><div>${flagPills(flagsHadir(h))}</div></div><a class="btn block" href="#home">Kembali</a></main>`;
+    }
+    if (!state.draft || state.draft._form !== 'hadir' || state.draft._mode !== mode) {
+      state.draft = { _form: 'hadir', _mode: mode, foto: [], gps: null, gpsMsg: 'Mendapatkan lokasi…' };
+      setTimeout(ambilLokasi, 50);
+    }
+    return `${topbar(mode === 'masuk' ? 'Masuk Kerja' : 'Keluar Kerja', '#home')}
+    <main class="wrap">
+      <form class="stack" data-form="hadir">
+        <div class="card" style="text-align:center"><div class="muted small">${fmtDate(t)}</div><div style="font-size:40px;font-weight:700;color:var(--ink)" id="jam-kini">${nowTime()}</div>${mode === 'keluar' ? `<div class="small">Masuk pada ${esc(h.masuk)}</div>` : ''}</div>
+        <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Swafoto (wajib)${photoGrid('foto', ['Swafoto'], 'user')}</div>
+        <div class="card small" id="gps-box">${gpsBox()}</div>
+        <label class="f">Catatan (pilihan)<input class="i" name="nota" placeholder="Contoh: terus ke tapak pembekal"></label>
+        <button class="btn primary block" type="submit">${mode === 'masuk' ? 'Rekod masuk kerja' : 'Rekod keluar kerja'}</button>
+        <div class="muted tiny">Swafoto dan lokasi hanya digunakan untuk rekod kehadiran dan disimpan dalam sistem Kaiser.</div>
+      </form>
+    </main>`;
+  }
+  function gpsBox() {
+    const g = state.draft && state.draft.gps, tp = tapakPoint();
+    if (!g) return `<div class="row between"><span>${esc((state.draft && state.draft.gpsMsg) || '')}</span><button type="button" class="btn sm" data-a="ambilLokasi">Cuba lagi</button></div>`;
+    const d = tp ? jarakMeter(g, tp) : null;
+    return `<div class="row between"><span>Lokasi diperoleh (±${Math.round(g.acc)} m)${d != null ? ` · ${Math.round(d)} m dari tapak` : ''}</span>${d != null ? (d > num(db.settings.radius) ? '<span class="pill p-flag">Jauh dari tapak</span>' : '<span class="pill p-okflag">Di tapak</span>') : ''}</div>`;
+  }
+  function ambilLokasi() {
+    if (!state.draft || state.draft._form !== 'hadir') return;
+    const box = () => { const b = $('#gps-box'); if (b) b.innerHTML = gpsBox(); };
+    if (!navigator.geolocation) { state.draft.gpsMsg = 'Telefon ini tidak menyokong lokasi.'; box(); return; }
+    state.draft.gpsMsg = 'Mendapatkan lokasi…'; box();
+    try {
+      navigator.geolocation.getCurrentPosition((p) => {
+        if (!state.draft || state.draft._form !== 'hadir') return;
+        state.draft.gps = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy };
+        box();
+      }, (e) => { if (state.draft) { state.draft.gpsMsg = e.code === 1 ? 'Kebenaran lokasi ditolak. Benarkan lokasi dalam tetapan pelayar.' : 'Lokasi tidak dapat diperoleh.'; box(); } }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+    } catch (e) { state.draft.gpsMsg = 'Lokasi tidak tersedia di sini.'; box(); }
+  }
+
+  // ----- Apps Pekerja: borang permohonan -----
+  function viewMohon(jenis) {
+    if (!MOHON[jenis]) return viewPermohonanSaya();
+    const u = me(), s = db.settings;
+    if (!state.draft || state.draft._form !== 'mohon' || state.draft._jenis !== jenis) state.draft = { _form: 'mohon', _jenis: jenis, lampiran: [], resitT: [] };
+    let body = '';
+    if (jenis === 'cuti') {
+      const b = bakiCuti(u);
+      body = `<div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+          <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${b.Tahunan}</div><div class="l">Baki tahunan</div></div>
+          <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${b.Sakit}</div><div class="l">Baki sakit</div></div>
+          <div class="card kpi" style="text-align:center;padding:10px"><div class="v">${b.Hospital}</div><div class="l">Baki hospital</div></div></div>
+        <label class="f">Jenis cuti<select class="i" name="jenisCuti" required>${JENIS_CUTI.map((j) => `<option>${j}</option>`).join('')}</select></label>
+        <div class="grid2"><label class="f">Dari<input class="i" type="date" name="mula" value="${today()}" required data-a-change="kiraHari"></label><label class="f">Hingga<input class="i" type="date" name="tamat" value="${today()}" required data-a-change="kiraHari"></label></div>
+        <div class="small" id="hari-cuti">${kiraHari(today(), today())} hari bekerja (Ahad tidak dikira)</div>
+        <label class="f">Sebab<textarea class="i" name="sebab" required></textarea></label>
+        <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Lampiran (sijil cuti sakit / dokumen)${photoGrid('lampiran', [''])}</div>`;
+    } else if (jenis === 'pendahuluan') {
+      const nx = (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; })();
+      body = `<div class="notice small">Had pendahuluan: ${rm(s.hadPendahuluan)}. Jumlah ini akan dipotong daripada gaji mengikut jadual yang dipilih.</div>
+        <label class="f">Jumlah (RM)<input class="i" type="number" min="1" step="0.01" name="jumlah" inputmode="decimal" required></label>
+        <label class="f">Sebab<textarea class="i" name="sebab" required></textarea></label>
+        <div class="grid2"><label class="f">Cara potongan<select class="i" name="ansuran"><option value="1">Sekali gus</option><option value="2">2 bulan</option><option value="3">3 bulan</option><option value="4">4 bulan</option></select></label>
+        <label class="f">Mula dipotong<input class="i" type="month" name="bulanPotong" value="${nx}" required></label></div>`;
+    } else if (jenis === 'pettycash') {
+      body = `<div class="notice small">Wang petty cash mesti dijelaskan dengan resit belian dalam ${esc(s.hariJelasPetty)} hari. Baki dipulangkan kepada akaun.</div>
+        <label class="f">Jumlah diperlukan (RM)<input class="i" type="number" min="1" step="0.01" name="jumlah" inputmode="decimal" required></label>
+        <label class="f">Tujuan<textarea class="i" name="tujuan" required placeholder="Contoh: beli bahan baiki paip Blok B"></textarea></label>
+        <label class="f">Kod kerja<select class="i" name="kodId">${kodOptions('', true)}</select></label>
+        <label class="f">Tarikh diperlukan<input class="i" type="date" name="tarikhPerlu" value="${today()}"></label>`;
+    } else {
+      body = `<label class="f">Jenis tuntutan<select class="i" name="jenisTuntutan">${JENIS_TUNTUTAN.map((j) => `<option>${j}</option>`).join('')}</select></label>
+        <div class="grid2"><label class="f">Tarikh belanja<input class="i" type="date" name="tarikhBelanja" value="${today()}" required></label>
+        <label class="f">Jumlah (RM)<input class="i" type="number" min="0" step="0.01" name="jumlah" inputmode="decimal"></label></div>
+        <label class="f">Jarak perjalanan (km)<input class="i" type="number" min="0" step="0.1" name="km" inputmode="decimal"></label>
+        <div class="muted tiny">${num(s.kadarKm) ? `Untuk perjalanan, jumlah dikira automatik: km × ${rm(s.kadarKm)}.` : 'Kadar per km belum ditetapkan oleh Pengarah; isi jumlah sendiri.'}</div>
+        <label class="f">Keterangan<textarea class="i" name="keterangan" required placeholder="Contoh: ke Gebeng ambil bahan untuk VO-002"></textarea></label>
+        <label class="f">Kod kerja (jika berkaitan projek)<select class="i" name="kodId">${kodOptions('', true)}</select></label>
+        <div class="f" style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600">Gambar resit${photoGrid('resitT', [''])}</div>`;
+    }
+    return `${topbar(MOHON[jenis].nama, '#home')}
+    <main class="wrap"><form class="stack" data-form="mohon" data-jenis="${jenis}">${body}<button class="btn primary block" type="submit">Hantar permohonan</button></form></main>`;
+  }
+
+  function viewPermohonanSaya() {
+    const u = me();
+    const mine = (db.mohon || []).filter((m) => m.userId === u.id).sort((a, b) => (a.tarikh < b.tarikh ? 1 : -1));
+    return `${topbar('Permohonan Saya', '#home')}
+    <main class="wrap"><div class="stack" style="gap:8px">${mine.length ? mine.map((m) => {
+      const [d, a] = mohonSummary(m);
+      return `<button class="item" data-a="openMohon" data-id="${m.id}"><span><span class="t">${esc(MOHON[m.jenis].pendek)} · ${esc(a)}</span><br><span class="muted tiny">${fmtDate(m.tarikh)} · ${esc(d)}</span></span>${pill(m.status)}</button>`;
+    }).join('') : '<div class="muted">Belum ada permohonan.</div>'}</div></main>`;
+  }
+
+  // ----- Apps Pentadbiran: kehadiran -----
+  function viewAHadir() {
+    const day = state.hariHadir || today();
+    const users = fieldUsers();
+    const onLeave = (uid2) => (db.mohon || []).find((m) => m.jenis === 'cuti' && m.userId === uid2 && m.status === 'diluluskan' && m.mula <= day && m.tamat >= day);
+    const rows = users.map((u) => ({ u, h: db.hadir.find((x) => x.userId === u.id && x.tarikh === day), c: onLeave(u.id) }));
+    const hadir = rows.filter((r) => r.h).length, lewat = rows.filter((r) => r.h && flagsHadir(r.h).includes('Lewat')).length, cuti = rows.filter((r) => !r.h && r.c).length;
+    const thumb = (arr) => ((arr || [])[0] ? `<img ${imgAttr(arr[0])} alt="Swafoto" data-a="zoom" style="width:44px;height:44px;object-fit:cover;border-radius:8px;vertical-align:middle;margin-right:6px;cursor:zoom-in">` : '');
+    return adminShell('hadir', `
+      <div class="row between" style="align-items:flex-end"><div><h1>Kehadiran</h1><div class="muted small">Swafoto, lokasi dan masa pelayan bagi setiap kakitangan tapak.</div></div>
+        <label class="f">Tarikh<input class="i" type="date" value="${day}" data-a-change="setHariHadir"></label></div>
+      <div class="kpis">
+        <div class="card kpi"><div class="l">Hadir</div><div class="v">${hadir} / ${users.length}</div></div>
+        <div class="card kpi"><div class="l">Lewat</div><div class="v" style="color:${lewat ? 'var(--warn)' : 'var(--ink)'}">${lewat}</div></div>
+        <div class="card kpi"><div class="l">Bercuti</div><div class="v">${cuti}</div></div>
+        <div class="card kpi"><div class="l">Tiada rekod</div><div class="v" style="color:${users.length - hadir - cuti ? 'var(--bad)' : 'var(--ink)'}">${users.length - hadir - cuti}</div></div>
+      </div>
+      <section class="card"><div class="tbl"><table><thead><tr><th>Nama</th><th>Peranan</th><th>Masuk</th><th>Keluar</th><th class="n">Jam</th><th>Semakan</th></tr></thead><tbody>
+      ${rows.map(({ u, h, c }) => `<tr><td>${esc(u.nama)}</td><td>${PERANAN[u.peranan]}</td>
+        <td>${h ? `${thumb(h.fotoMasuk)}${esc(h.masuk)}` : c ? `<span class="pill p-vo">Cuti ${esc(c.jenisCuti)}</span>` : '<span class="muted">—</span>'}</td>
+        <td>${h && h.keluar ? `${thumb(h.fotoKeluar)}${esc(h.keluar)}` : h ? '<span class="muted">Belum keluar</span>' : ''}</td>
+        <td class="n">${h ? jamHadir(h) || '—' : ''}</td>
+        <td>${h ? flagPills(flagsHadir(h)) : c ? '' : '<span class="pill p-flag">Tiada rekod</span>'}${h && h.nota ? `<div class="tiny muted">${esc(h.nota)}</div>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada pekerja atau penyelia didaftarkan.</td></tr>'}
+      </tbody></table></div></section>`);
+  }
+
+  // ----- Apps Pentadbiran: permohonan staf -----
+  function viewAMohon() {
+    const u = me();
+    const fj = state.mohonJenis || 'semua', fs2 = state.mohonStatus || 'tindakan';
+    let list = (db.mohon || []).slice();
+    if (fj !== 'semua') list = list.filter((m) => m.jenis === fj);
+    if (fs2 === 'tindakan') list = list.filter((m) => canAct(m, u));
+    else if (fs2 === 'aktif') list = list.filter((m) => !!stepOf(m));
+    list.sort((a, b) => (a.tarikh < b.tarikh ? 1 : -1));
+    const cnt = (j) => mohonQueue(u).filter((m) => m.jenis === j).length;
+    return adminShell('mohon', `
+      <div><h1>Permohonan staf</h1><div class="muted small">Cuti, tuntutan, petty cash dan pendahuluan gaji daripada Apps Pekerja.</div></div>
+      <div class="kpis">${Object.keys(MOHON).map((j) => `<div class="card kpi"><div class="l">${MOHON[j].pendek} menunggu anda</div><div class="v">${cnt(j)}</div></div>`).join('')}</div>
+      <div class="row">
+        <label class="f">Jenis<select class="i" data-a-change="setMohonJenis"><option value="semua">Semua</option>${Object.keys(MOHON).map((j) => `<option value="${j}" ${fj === j ? 'selected' : ''}>${MOHON[j].pendek}</option>`).join('')}</select></label>
+        <label class="f">Papar<select class="i" data-a-change="setMohonStatus"><option value="tindakan" ${fs2 === 'tindakan' ? 'selected' : ''}>Perlu tindakan saya</option><option value="aktif" ${fs2 === 'aktif' ? 'selected' : ''}>Semua yang aktif</option><option value="semua" ${fs2 === 'semua' ? 'selected' : ''}>Semua</option></select></label>
+      </div>
+      <section class="card"><div class="tbl"><table><thead><tr><th>Tarikh</th><th>Nama</th><th>Jenis</th><th>Butiran</th><th class="n">Jumlah</th><th>Semakan</th><th>Status</th></tr></thead><tbody>
+      ${list.map((m) => { const [d, a] = mohonSummary(m); return `<tr style="cursor:pointer" data-a="openMohon" data-id="${m.id}"><td>${fmtDate(m.tarikh)}</td><td>${esc(userName(m.userId))}</td><td>${esc(MOHON[m.jenis].pendek)}</td><td>${esc(d)}</td><td class="n">${esc(a)}</td><td>${flagPills(flagsMohon(m))}</td><td>${pill(m.status)}</td></tr>`; }).join('') || '<tr><td colspan="7" class="muted">Tiada permohonan.</td></tr>'}
+      </tbody></table></div></section>`);
+  }
+
+  function mohonDetail(id) {
+    const m = (db.mohon || []).find((x) => x.id === id);
+    if (!m) return '';
+    const u = me();
+    const rows = [['Nama', userName(m.userId)], ['Tarikh mohon', fmtDate(m.tarikh)]];
+    let imgs = [];
+    if (m.jenis === 'cuti') {
+      const b = bakiCuti(db.users.find((x) => x.id === m.userId) || {});
+      rows.push(['Jenis cuti', m.jenisCuti], ['Tempoh', `${fmtDate(m.mula)} – ${fmtDate(m.tamat)} (${m.hari} hari)`], ['Sebab', m.sebab], ['Baki tahunan / sakit', `${b.Tahunan} / ${b.Sakit} hari`]);
+      imgs = (m.lampiran || []).map((g) => ({ img: g.img, id: g.id, cap: 'Lampiran' }));
+    } else if (m.jenis === 'pendahuluan') {
+      rows.push(['Jumlah', rm(m.jumlah)], ['Sebab', m.sebab], ['Potongan', `${num(m.ansuran) > 1 ? `${m.ansuran} bulan × ${rm(num(m.jumlah) / num(m.ansuran))}` : 'Sekali gus'} mulai ${m.bulanPotong ? monthName(m.bulanPotong) : '—'}`]);
+    } else if (m.jenis === 'pettycash') {
+      rows.push(['Jumlah', rm(m.jumlah)], ['Tujuan', m.tujuan], ['Kod kerja', (kodOf(m.kodId) || {}).kod || '—'], ['Tarikh diperlukan', fmtDate(m.tarikhPerlu)]);
+      if (m.tarikhBayar) rows.push(['Wang diberi', fmtDate(m.tarikhBayar)]);
+      if (m.status === 'dijelaskan') rows.push(['Dibelanjakan', rm(m.jumlahGuna)], ['Baki dipulangkan', rm(num(m.jumlah) - num(m.jumlahGuna))]);
+    } else {
+      rows.push(['Jenis', m.jenisTuntutan], ['Tarikh belanja', fmtDate(m.tarikhBelanja)], ['Jumlah', rm(m.jumlah)], ...(num(m.km) ? [['Jarak', `${m.km} km`]] : []), ['Keterangan', m.keterangan], ['Kod kerja', (kodOf(m.kodId) || {}).kod || '—']);
+      imgs = (m.resitT || []).map((g) => ({ img: g.img, id: g.id, cap: 'Resit' }));
+    }
+    const st = stepOf(m);
+    let actions = '';
+    if (canAct(m, u)) {
+      actions = st.form ? `<button class="btn primary" data-a="mohonJelas" data-id="${m.id}">${st.label}</button>` : `<button class="btn primary" data-a="mohonStep" data-id="${m.id}">${st.label}</button>`;
+      if (canReject(m, u)) actions += ` <button class="btn danger" data-a="mohonTolak" data-id="${m.id}">Tolak</button>`;
+    } else if (m.userId === u.id && m.status === 'dihantar') {
+      actions = `<button class="btn danger" data-a="mohonBatal" data-id="${m.id}">Batalkan permohonan</button>`;
+    } else if (st && isAdmin(u) && m.userId === u.id) {
+      actions = '<div class="muted small">Permohonan anda sendiri perlu diluluskan oleh orang lain.</div>';
+    }
+    const hist = (m.history || []).slice().reverse();
+    return `<div class="row between"><h2>${esc(MOHON[m.jenis].nama)}</h2>${pill(m.status)}</div>
+      <div>${flagPills(flagsMohon(m))}</div>
+      ${m.nota ? `<div class="notice bad"><b>Nota:</b> ${esc(m.nota)}</div>` : ''}
+      <div class="tbl"><table style="min-width:0"><tbody>${rows.map(([a, b]) => `<tr><th style="width:38%">${esc(a)}</th><td style="white-space:pre-line">${esc(b)}</td></tr>`).join('')}</tbody></table></div>
+      ${imgs.length ? `<div class="thumbs">${imgs.map((g) => `<img ${imgAttr(g)} alt="${esc(g.cap)}" data-a="zoom">`).join('')}</div>` : ''}
+      ${actions ? `<div class="row" id="mohon-actions">${actions}</div>` : ''}
+      ${hist.length ? `<details><summary class="small">Sejarah (${hist.length})</summary><ul class="small">${hist.map((h) => `<li>${esc(new Date(h.t).toLocaleString('ms-MY'))} · ${esc(userName(h.by))} · ${esc(h.act)}${h.nota ? ` · “${esc(h.nota)}”` : ''}</li>`).join('')}</ul></details>` : ''}
+      <div><button class="btn" data-a="closeModal">Tutup</button></div>`;
+  }
+
+  function saveMohon(m, act, nota) {
+    (m.history = m.history || []).push({ t: new Date().toISOString(), by: state.userId, act, nota: nota || '' });
+    commit(`${m.jenis}: ${act}`, m.id, [['mohon', m]]);
+  }
+  const findMohon = (id) => (db.mohon || []).find((x) => x.id === id);
+
+  const STAF_ACTIONS = {
+    ambilLokasi() { ambilLokasi(); },
+    openMohon(el) { openModal(mohonDetail(el.dataset.id)); },
+    mohonStep(el) {
+      const m = findMohon(el.dataset.id), u = me();
+      if (!m || !canAct(m, u)) return;
+      const st = stepOf(m);
+      m.status = st.to; m.nota = '';
+      if (st.to === 'dibayar') m.tarikhBayar = today();
+      saveMohon(m, STATUS_LABEL[st.to]);
+      closeModal(); toast(`${MOHON[m.jenis].pendek}: ${STATUS_LABEL[st.to].toLowerCase()}`); render();
+    },
+    mohonTolak(el) {
+      $('#mohon-actions').outerHTML = `<form class="stack" data-form="mohonTolak" data-id="${el.dataset.id}"><label class="f">Sebab ditolak<textarea class="i" name="nota" required></textarea></label><div><button class="btn danger" type="submit">Tolak permohonan</button></div></form>`;
+    },
+    mohonJelas(el) {
+      const m = findMohon(el.dataset.id);
+      $('#mohon-actions').outerHTML = `<form class="stack" data-form="mohonJelas" data-id="${m.id}"><label class="f">Jumlah dibelanjakan ikut resit (RM)<input class="i" type="number" step="0.01" min="0" max="${esc(m.jumlah)}" name="jumlahGuna" required></label><div class="muted tiny">Baki = ${rm(m.jumlah)} tolak jumlah dibelanjakan, mesti dipulangkan kepada akaun. Pastikan resit telah direkod dalam Belian / Resit.</div><div><button class="btn primary" type="submit">Sahkan penjelasan</button></div></form>`;
+    },
+    mohonBatal(el) {
+      if (!confirmInline(el, 'Tekan sekali lagi untuk batal')) return;
+      const m = findMohon(el.dataset.id);
+      m.status = 'dibatalkan'; saveMohon(m, 'Dibatalkan');
+      closeModal(); toast('Permohonan dibatalkan'); render();
+    },
+    lokasiTapak() {
+      if (!navigator.geolocation) { toast('Lokasi tidak disokong'); return; }
+      toast('Mendapatkan lokasi…');
+      navigator.geolocation.getCurrentPosition((p) => {
+        const f = $('form[data-form=settings]');
+        f.elements.namedItem('tapakLat').value = p.coords.latitude.toFixed(6);
+        f.elements.namedItem('tapakLng').value = p.coords.longitude.toFixed(6);
+        toast('Lokasi diisi. Tekan Simpan tetapan.');
+      }, () => toast('Lokasi tidak dapat diperoleh'), { enableHighAccuracy: true, timeout: 15000 });
+    },
+  };
+
+  const STAF_CHANGE = {
+    kiraHari() { const f = $('form[data-form=mohon]'); const n = kiraHari(f.elements.namedItem('mula').value, f.elements.namedItem('tamat').value); $('#hari-cuti').textContent = `${n} hari bekerja (Ahad tidak dikira)`; },
+    setHariHadir(el) { state.hariHadir = el.value; render(); },
+    setMohonJenis(el) { state.mohonJenis = el.value; render(); },
+    setMohonStatus(el) { state.mohonStatus = el.value; render(); },
+  };
+
+  const STAF_FORMS = {
+    hadir(fd) {
+      const d = state.draft, u = me(), t = today(), mode = d._mode;
+      if (!d.foto.length) { toast('Ambil swafoto dahulu'); return; }
+      const tp = tapakPoint();
+      const jarak = d.gps && tp ? Math.round(jarakMeter(d.gps, tp)) : null;
+      let h = db.hadir.find((x) => x.userId === u.id && x.tarikh === t);
+      const foto = persistPhotos(d.foto);
+      if (mode === 'masuk') {
+        h = { id: uid(), userId: u.id, tarikh: t, masuk: nowTime(), keluar: '', fotoMasuk: foto, gpsMasuk: d.gps, jarakMasuk: jarak, nota: (fd.nota || '').trim() };
+        db.hadir.push(h);
+      } else {
+        Object.assign(h, { keluar: nowTime(), fotoKeluar: foto, gpsKeluar: d.gps, jarakKeluar: jarak, nota: [h.nota, (fd.nota || '').trim()].filter(Boolean).join(' · ') });
+      }
+      if (commit(mode === 'masuk' ? 'masuk kerja' : 'keluar kerja', h.id, [['hadir', h]])) {
+        if (CLOUD) setTimeout(() => fs.collection('hadir').doc(h.id).update({ [mode + 'Server']: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {}), 300);
+        else { h[mode + 'Server'] = { seconds: Math.floor(Date.now() / 1000) }; Store.save(db); }
+        state.draft = null;
+        const fl = flagsHadir(h);
+        toast(mode === 'masuk' ? `Masuk kerja ${h.masuk} direkod${fl.length ? ' · ' + fl.join(', ') : ''}` : `Keluar kerja ${h.keluar} direkod`);
+        location.hash = '#home';
+      }
+    },
+    mohon(fd, form) {
+      const jenis = form.dataset.jenis, d = state.draft;
+      const m = { id: uid(), jenis, userId: state.userId, tarikh: today(), status: 'dihantar', nota: '', history: [{ t: new Date().toISOString(), by: state.userId, act: 'Dihantar' }] };
+      if (jenis === 'cuti') {
+        if (fd.tamat < fd.mula) { toast('Tarikh tamat sebelum tarikh mula'); return; }
+        Object.assign(m, { jenisCuti: fd.jenisCuti, mula: fd.mula, tamat: fd.tamat, hari: kiraHari(fd.mula, fd.tamat), sebab: fd.sebab.trim(), lampiran: persistPhotos(d.lampiran) });
+        if (!m.hari) { toast('Tempoh cuti tiada hari bekerja'); return; }
+      } else if (jenis === 'pendahuluan') {
+        Object.assign(m, { jumlah: num(fd.jumlah), sebab: fd.sebab.trim(), ansuran: num(fd.ansuran) || 1, bulanPotong: fd.bulanPotong });
+      } else if (jenis === 'pettycash') {
+        Object.assign(m, { jumlah: num(fd.jumlah), tujuan: fd.tujuan.trim(), kodId: fd.kodId || '', tarikhPerlu: fd.tarikhPerlu });
+      } else {
+        const km = num(fd.km), kadar = num(db.settings.kadarKm);
+        let jumlah = num(fd.jumlah);
+        if (fd.jenisTuntutan === 'Perjalanan (km)' && km && kadar && !jumlah) jumlah = Math.round(km * kadar * 100) / 100;
+        if (!jumlah) { toast('Isi jumlah tuntutan'); return; }
+        Object.assign(m, { jenisTuntutan: fd.jenisTuntutan, tarikhBelanja: fd.tarikhBelanja, jumlah, km, keterangan: fd.keterangan.trim(), kodId: fd.kodId || '', resitT: persistPhotos(d.resitT) });
+      }
+      db.mohon.push(m);
+      if (commit(`mohon ${jenis}`, m.id, [['mohon', m]])) {
+        state.draft = null;
+        const f = flagsMohon(m);
+        toast(`${MOHON[jenis].pendek} dihantar${f.length ? ' · ' + f.join(', ') : ''}`);
+        location.hash = '#permohonan';
+      }
+    },
+    mohonTolak(fd, form) {
+      const m = findMohon(form.dataset.id);
+      m.status = 'ditolak'; m.nota = fd.nota.trim(); saveMohon(m, 'Ditolak', m.nota);
+      closeModal(); toast('Permohonan ditolak'); render();
+    },
+    mohonJelas(fd, form) {
+      const m = findMohon(form.dataset.id);
+      m.jumlahGuna = num(fd.jumlahGuna); m.status = 'dijelaskan'; m.tarikhJelas = today();
+      saveMohon(m, `Dijelaskan · guna ${rm(m.jumlahGuna)}, baki ${rm(num(m.jumlah) - m.jumlahGuna)}`);
+      closeModal(); toast('Petty cash dijelaskan'); render();
+    },
+  };
+
+  // Ringkasan bulanan untuk pemprosesan gaji (input kepada sistem gaji / akaun).
+  function gajiRows(ym) {
+    const head = [['Nama', 'Peranan', 'Hari hadir', 'Jumlah jam', 'Hari lewat', 'Cuti tahunan', 'Cuti sakit/hospital', 'Cuti tanpa gaji', 'Cuti lain', 'Potongan pendahuluan (RM)', 'Tuntutan dibayar (RM)', 'Petty cash belum dijelaskan (RM)']];
+    const inYm = (d) => (d || '').slice(0, 7) === ym;
+    const cutiHari = (m) => { let n = 0; for (let t = Date.parse(m.mula); t <= Date.parse(m.tamat); t += 864e5) { const ds = new Date(t).toISOString().slice(0, 10); if (inYm(ds) && new Date(t).getUTCDay() !== 0) n++; } return n; };
+    return head.concat(db.users.filter((u) => u.aktif !== false).map((u) => {
+      const hs = db.hadir.filter((h) => h.userId === u.id && inYm(h.tarikh));
+      const ms = (db.mohon || []).filter((m) => m.userId === u.id);
+      const cuti = (types) => ms.filter((m) => m.jenis === 'cuti' && m.status === 'diluluskan' && types.includes(m.jenisCuti)).reduce((a, m) => a + cutiHari(m), 0);
+      return [u.nama, PERANAN[u.peranan], hs.length, hs.reduce((a, h) => a + jamHadir(h), 0), hs.filter((h) => flagsHadir(h).includes('Lewat')).length,
+        cuti(['Tahunan', 'Kecemasan']), cuti(['Sakit', 'Hospital']), cuti(['Tanpa gaji']), cuti(['Bersalin / paterniti', 'Lain-lain']),
+        ms.reduce((a, m) => a + potonganBulan(m, ym), 0).toFixed(2),
+        ms.filter((m) => m.jenis === 'tuntutan' && m.status === 'dibayar' && inYm(m.tarikhBayar)).reduce((a, m) => a + num(m.jumlah), 0).toFixed(2),
+        ms.filter((m) => m.jenis === 'pettycash' && m.status === 'dibayar').reduce((a, m) => a + num(m.jumlah), 0).toFixed(2)];
+    }));
+  }
+
 
   // ---------- Modal butiran rekod ----------
   function recDetail(type, id) {
@@ -754,13 +1237,13 @@
     if (parts[0] === 'a') {
       if (!isAdmin(u)) { location.hash = '#home'; return; }
       const v = parts[1] || 'dash';
-      const map = { dash: viewDash, semak: viewSemak, skop: () => (parts[2] ? viewSkop(parts[2]) : viewSkopList()), vo: viewVOList, kod: viewKod, tunai: viewTunai, eksport: viewEksport, tetapan: () => (u.peranan === 'pengarah' ? viewTetapan() : viewDash()) };
+      const map = { hadir: viewAHadir, mohon: viewAMohon, dash: viewDash, semak: viewSemak, skop: () => (parts[2] ? viewSkop(parts[2]) : viewSkopList()), vo: viewVOList, kod: viewKod, tunai: viewTunai, eksport: viewEksport, tetapan: () => (u.peranan === 'pengarah' ? viewTetapan() : viewDash()) };
       app.innerHTML = (map[v] || viewDash)();
     } else {
       const v = (parts[0] && parts[0] !== 'mula') ? parts[0] : (isAdmin(u) ? 'admin' : 'home');
       if (v === 'admin') { location.hash = '#a-dash'; return; }
-      if (v !== 'laporan' && v !== 'belian' && v !== 'vo') state.draft = null;
-      const map = { home: viewHome, laporan: () => viewLaporan(parts[1]), belian: () => viewBelian(parts[1]), vo: viewVO, rekod: viewRekod };
+      if (!['laporan', 'belian', 'vo', 'hadir', 'mohon'].includes(v)) state.draft = null;
+      const map = { home: viewHome, laporan: () => viewLaporan(parts[1]), belian: () => viewBelian(parts[1]), vo: viewVO, rekod: viewRekod, hadir: viewHadir, mohon: () => viewMohon(parts[1]), permohonan: viewPermohonanSaya };
       app.innerHTML = (map[v] || viewHome)();
     }
     if (state.lastHash !== hash) window.scrollTo(0, 0);
@@ -771,8 +1254,8 @@
   // Lukis semula hanya grid gambar supaya isian borang tidak hilang.
   function refreshPhotos(field) {
     const el = $('#ph-' + field); if (!el) return;
-    const caps = field === 'gambar' ? ['Sebelum', 'Semasa', 'Selepas'] : [''];
-    el.outerHTML = photoGrid(field, caps);
+    const caps = field === 'gambar' ? ['Sebelum', 'Semasa', 'Selepas'] : field === 'foto' ? ['Swafoto'] : [''];
+    el.outerHTML = photoGrid(field, caps, field === 'foto' ? 'user' : 'environment');
     hydrateImages();
   }
   function rerenderKeepForm() {
@@ -788,8 +1271,7 @@
     login(el) { state.userId = el.dataset.id; Store.setUser(state.userId); const u = me(); location.hash = isAdmin(u) ? '#a-dash' : '#home'; render(); },
     logout() { state.draft = null; location.hash = '#mula'; if (CLOUD) { Cloud.stop(); auth.signOut(); return; } state.userId = null; Store.setUser(null); render(); },
     resetPw() { const em = ($('input[name=email]') || {}).value; if (!em) { toast('Isi emel dahulu'); return; } auth.sendPasswordResetEmail(em.trim()).then(() => toast('Emel tetapan semula kata laluan dihantar')).catch((e) => toast(authMsg(e))); },
-    masuk() { const h = { id: uid(), userId: state.userId, tarikh: today(), masuk: nowTime(), keluar: '' }; db.hadir.push(h); commit('masuk kerja', '', [['hadir', h]]); toast('Masuk kerja direkod'); render(); },
-    keluar() { const h = db.hadir.find((x) => x.userId === state.userId && x.tarikh === today()); if (h) { h.keluar = nowTime(); commit('keluar kerja', '', [['hadir', h]]); toast('Keluar kerja direkod'); } render(); },
+    ...STAF_ACTIONS,
     rmPhoto(el) { state.draft[el.dataset.f].splice(Number(el.dataset.i), 1); refreshPhotos(el.dataset.f); },
     setBayaran(el) { state.draft.bayaran = el.dataset.v; rerenderKeepForm(); },
     setSkop(el) { state.draft.skop = el.dataset.v; rerenderKeepForm(); },
@@ -836,11 +1318,13 @@
   }
 
   const CHANGE = {
+    ...STAF_CHANGE,
     setBulan(el) { state.bulan = el.value; render(); },
     voStatus(el) { const k = kodOf(el.dataset.id); k.voStatus = el.value; (k.history = k.history || []).push({ t: new Date().toISOString(), by: state.userId, act: 'Status VO: ' + el.value }); commit('status VO', k.id, [['kod', k]]); toast('Status VO dikemas kini'); },
   };
 
   const FORMS = {
+    ...STAF_FORMS,
     laporan(fd, form) {
       const id = state.draft._id;
       const data = { tarikh: fd.tarikh, kodId: fd.kodId, lokasi: fd.lokasi.trim(), tugas: fd.tugas.trim(), pekerja: fd.pekerja.trim(), jam: num(fd.jam), bahan: fd.bahan.trim(), gambar: persistPhotos(state.draft.gambar) };
@@ -895,9 +1379,9 @@
     },
     topup(fd) { const t = { id: uid(), tarikh: today(), jumlah: num(fd.jumlah), catatan: fd.catatan, oleh: state.userId }; db.tunai.push(t); commit('top-up tunai', '', [['tunai', t]]); toast('Top-up direkod'); render(); },
     kiraan(fd) { const jangka = bakiTunai().baki; const kr = { id: uid(), tarikh: today(), jumlah: num(fd.jumlah), jangka, oleh: state.userId }; db.kiraan.push(kr); commit('kiraan tunai', '', [['kiraan', kr]]); const v = num(fd.jumlah) - jangka; toast(Math.abs(v) < 0.005 ? 'Kiraan sepadan' : `Varians ${rm(v)}: perlu dijelaskan`); render(); },
-    settings(fd) { Object.assign(db.settings, { klien: fd.klien, prefix: fd.prefix, hadTunai: num(fd.hadTunai), imprest: num(fd.imprest) }); commit('tetapan', '', [['settings', Object.assign({ id: 'main' }, db.settings)]]); toast('Tetapan disimpan'); render(); },
+    settings(fd) { Object.assign(db.settings, { klien: fd.klien, prefix: fd.prefix, hadTunai: num(fd.hadTunai), imprest: num(fd.imprest), waktuMasuk: fd.waktuMasuk || '08:00', kadarKm: num(fd.kadarKm), hadPendahuluan: num(fd.hadPendahuluan), hariJelasPetty: num(fd.hariJelasPetty) || 7, tapakLat: (fd.tapakLat || '').trim(), tapakLng: (fd.tapakLng || '').trim(), radius: num(fd.radius) || 500 }); commit('tetapan', '', [['settings', Object.assign({ id: 'main' }, db.settings)]]); toast('Tetapan disimpan'); render(); },
     user(fd, form) {
-      if (!CLOUD) { db.users.push({ id: uid(), nama: fd.nama.trim(), peranan: fd.peranan }); commit('tambah pengguna', fd.nama); toast('Pengguna ditambah'); render(); return; }
+      if (!CLOUD) { db.users.push({ id: uid(), nama: fd.nama.trim(), peranan: fd.peranan, tarikhMula: fd.tarikhMula || '' }); commit('tambah pengguna', fd.nama); toast('Pengguna ditambah'); render(); return; }
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Mendaftar…';
       createCloudUser(fd).then(() => { toast(`${fd.nama} didaftarkan. Beri emel dan kata laluan sementara kepadanya.`); render(); })
         .catch((e) => { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast(authMsg(e)); });
@@ -920,6 +1404,8 @@
     } else if (kind === 'laporan') {
       rows = [['Tarikh', 'Oleh', 'Kod kerja', 'Skop', 'Lokasi', 'Tugas', 'Pekerja', 'Jam', 'Bahan', 'Status']]
         .concat(db.laporan.filter((l) => inMonth(l, ym)).map((l) => { const k = kodOf(l.kodId) || {}; return [l.tarikh, userName(l.userId), k.kod, skopOf(k.skop).nama, l.lokasi, l.tugas, l.pekerja, l.jam, l.bahan, STATUS_LABEL[l.status]]; }));
+    } else if (kind === 'gaji') {
+      rows = gajiRows(ym);
     } else {
       rows = [['Kod kerja', 'Penerangan', 'Skop', 'Jenis', 'Status VO', 'Jam', 'Kos (RM)']]
         .concat(db.kod.map((k) => [k.kod, k.penerangan, skopOf(k.skop).nama, k.jenis, k.voStatus || '', jamKod(k.id, ym), kosKod(k.id, ym).toFixed(2)]).filter((r) => r[5] || Number(r[6])));
@@ -988,7 +1474,7 @@
     scheduleRender._t = setTimeout(() => {
       const ae = document.activeElement;
       const typing = ae && ae.closest && ae.closest('#app') && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
-      const onForm = /^#?(laporan|belian|vo)(-|$)/.test(location.hash.replace(/^#/, '')) && state.draft;
+      const onForm = /^#?(laporan|belian|vo|hadir|mohon)(-|$)/.test(location.hash.replace(/^#/, '')) && state.draft;
       if (typing || onForm) { state.pendingRender = true; return; }
       state.pendingRender = false;
       if ($('form[data-form]')) rerenderKeepForm(); else render();
@@ -1008,7 +1494,7 @@
     const sa = sec.auth();
     await sa.setPersistence(firebase.auth.Auth.Persistence.NONE);
     const cred = await sa.createUserWithEmailAndPassword(fd.email.trim(), fd.password);
-    const u = { id: cred.user.uid, nama: fd.nama.trim(), peranan: fd.peranan, email: fd.email.trim().toLowerCase(), aktif: true };
+    const u = { id: cred.user.uid, nama: fd.nama.trim(), peranan: fd.peranan, email: fd.email.trim().toLowerCase(), aktif: true, tarikhMula: fd.tarikhMula || '' };
     await sa.signOut();
     await fs.collection('users').doc(u.id).set(clean(Object.assign({}, u, { id: undefined })));
     commit('tambah pengguna', u.email);

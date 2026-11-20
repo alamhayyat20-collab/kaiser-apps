@@ -1,8 +1,8 @@
 # Apps Kaiser · Rekod Kerja & Tuntutan (Fasa 1)
 
-Satu PWA untuk Kaiser Engineering Sdn. Bhd.:
-- **Apps Pekerja** (penyelia, telefon): masuk/keluar kerja, laporan kerja dengan gambar, resit belian, arahan kerja tambahan (VO), rekod saya.
-- **Apps Pentadbiran** (pengurus, pengarah, akaun): dashboard, peti semakan (sahkan / kembalikan / lulus akhir), pantauan skop kerja (8 skop), daftar VO, kod kerja, tunai runcit, eksport CSV bulanan, tetapan & pengguna.
+Satu PWA untuk Kaiser Engineering Sdn. Bhd. Alamat: https://alamhayyat20-collab.github.io/kaiser-apps/
+- **Apps Pekerja** (pekerja & penyelia, telefon): kehadiran bergambar (swafoto + lokasi + masa pelayan), laporan kerja bergambar, permohonan cuti (baki ikut Akta Kerja 1955), tuntutan, petty cash, pendahuluan gaji; penyelia juga: resit belian dan arahan kerja tambahan (VO).
+- **Apps Pentadbiran** (pengurus, pengarah, akaun): dashboard, kehadiran harian, permohonan staf (lulus / tolak / bayar / jelaskan), ringkasan gaji CSV, peti semakan (sahkan / kembalikan / lulus akhir), pantauan skop kerja (8 skop), daftar VO, kod kerja, tunai runcit, eksport CSV bulanan, tetapan & pengguna.
 
 ## Mod
 - **Awan (Firebase):** bila dibuka di laman https (GitHub Pages), apps guna projek Firebase `kaiser-engineering-5d507`: log masuk emel ikut peranan, Firestore untuk semua rekod, gambar sebagai dokumen berasingan (`gambar`), boleh diisi tanpa internet.
