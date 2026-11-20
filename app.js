@@ -1328,6 +1328,8 @@
     { id: 'kerani', nama: 'Kerani', skop: 'semua', kuasa: kunci(['aksesAdmin', 'daftarPekerja', 'adminCuti', 'adminHadir']) },
     { id: 'pengurusKewangan', nama: 'Pengurus Kewangan', skop: 'semua', kuasa: kunci(['aksesAdmin', 'adminTuntutan', 'gaji', 'adminTunai', 'eksport', 'dashboard']) },
   ];
+  // Kumpulan kerja cadangan Dato' (21 Nov 2026), ikut bidang kerja Kaiser di FPG.
+  const KUMPULAN_CADANGAN = ['General Worker', 'Electrical', 'Health & Safety (HSE)', 'Civil', 'Mechanical', 'Fabrication & Welding', 'Painting & Blasting', 'Air-Cond (HVAC)', 'QA/QC', 'Pentadbiran (Office)'];
   const JAWATAN_ASAS = ['Pekerja Am', 'Juruteknik', 'Juruteknik Elektrik', 'Tukang Kimpal', 'Pemandu', 'Penyelaras', 'Penyelia Tapak', 'Pengurus Tapak', 'Pengurus Projek', 'Pengurus Operasi', 'Kerani', 'Pengurus Kewangan', 'OSH-C', 'QAQC'];
   const SULIT_MEDAN = [['noIC', 'No. IC'], ['alamat', 'Alamat'], ['gajiAsas', 'Gaji asas (RM)'], ['elaun', 'Elaun tetap (RM)'], ['bank', 'Bank'], ['noAkaun', 'No. akaun bank'], ['noKWSP', 'No. KWSP'], ['noPERKESO', 'No. PERKESO']];
 
@@ -1532,13 +1534,14 @@
     const pilihOrang = (name, sel) => `<select class="i" name="${name}" ${U ? '' : 'disabled'}><option value="">—</option>${db.users.filter((p) => p.aktif !== false).map((p) => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}</select>`;
     return adminShell('pekerja', `<h1>Jawatan, templat &amp; kumpulan</h1>${pekerjaNav('jawatan')}
       <section class="card stack"><h2>Kumpulan operasi</h2>
-        <div class="muted small">Kumpulan ikut pasukan penyelia. Nama di bawah ialah data contoh dan boleh ditukar.</div>
+        <div class="muted small">Kumpulan ikut bidang kerja. Pilih penyelia dan pengurus bagi setiap kumpulan. Nama boleh ditukar bila-bila masa.</div>
         ${(db.kumpulan || []).map((k) => `<form class="row" data-form="kumpulan" data-id="${k.id}" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
           <label class="f" style="flex:2 1 180px">Nama<input class="i" name="nama" value="${esc(k.nama)}" ${U ? '' : 'disabled'}></label>
           <label class="f" style="flex:1 1 150px">Penyelia${pilihOrang('penyelia', (k.penyelia || [])[0])}</label>
           <label class="f" style="flex:1 1 150px">Pengurus${pilihOrang('pengurus', (k.pengurus || [])[0])}</label>
           <span class="small muted" style="padding-bottom:10px">${bil(k.id)} orang${k.aktif === false ? ' · tidak aktif' : ''}</span>
           ${U ? '<button class="btn sm primary" type="submit">Simpan</button>' : ''}</form>`).join('') || '<div class="muted small">Belum ada kumpulan.</div>'}
+        ${U && KUMPULAN_CADANGAN.some((n) => !(db.kumpulan || []).some((k) => k.nama === n)) ? `<div><button class="btn primary" data-a="kumpulanCadangan">Cipta kumpulan cadangan (${KUMPULAN_CADANGAN.filter((n) => !(db.kumpulan || []).some((k) => k.nama === n)).length})</button> <span class="muted tiny">${esc(KUMPULAN_CADANGAN.join(', '))}</span></div>` : ''}
         ${U ? `<form class="row" data-form="kumpulanBaru" style="gap:8px;align-items:flex-end"><label class="f" style="flex:1">Kumpulan baharu<input class="i" name="nama" placeholder="Contoh: Pasukan Iskandar" required></label><button class="btn" type="submit">Tambah</button></form>` : ''}
       </section>
       <section class="card stack"><h2>Templat jawatan</h2>
@@ -1716,6 +1719,16 @@
       const p = db.users.find((x) => x.id === el.dataset.id);
       form.querySelectorAll('input[name^="sk_"]').forEach((c) => { c.checked = t.skop === 'semua' ? c.name === 'sk_semua' : t.skop === 'sendiri' ? c.name === 'sk_' + p.kumpulanId : false; });
       toast(`Kotak ditanda ikut templat ${t.nama}. Tekan Simpan kuasa.`);
+    },
+    async kumpulanCadangan(el) {
+      el.disabled = true;
+      const baru = KUMPULAN_CADANGAN.filter((n) => !(db.kumpulan || []).some((k) => k.nama === n)).map((nama, i) => ({ id: 'G' + uid() + i, nama, penyelia: [], pengurus: [], aktif: true }));
+      try {
+        if (CLOUD) { const b = fs.batch(); baru.forEach((k) => b.set(fs.collection('kumpulan').doc(k.id), clean(Object.assign({}, k, { id: undefined })))); await b.commit(); }
+        else { db.kumpulan = (db.kumpulan || []).concat(baru); Store.save(db); }
+        logP('Cipta kumpulan cadangan', baru.map((k) => k.nama).join(', '));
+        toast(`${baru.length} kumpulan dicipta`); render();
+      } catch (e) { el.disabled = false; toast(authMsg(e)); }
     },
     async buangJawatan(el) {
       if (!confirmInline(el, '✕?')) return;
