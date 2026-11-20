@@ -66,13 +66,18 @@
   function seed() {
     const t = today(), m = thisMonth();
     const d = (day) => `${m}-${pad(Math.min(day, Number(t.slice(8, 10))))}`;
+    // Data contoh: kumpulan ikut pasukan penyelia (nama sebenar akan diberi oleh Dato').
+    const kumpulan = [
+      { id: 'G1', nama: 'Pasukan Iskandar (contoh)', penyelia: ['u3'], pengurus: ['u2'], aktif: true },
+      { id: 'G2', nama: 'Pasukan Husni (contoh)', penyelia: ['u4'], pengurus: ['u2'], aktif: true },
+    ];
     const users = [
-      { id: 'u1', nama: 'Mohd. Rasidi', peranan: 'pengarah' },
-      { id: 'u2', nama: 'Ahmad Azli', peranan: 'pengurus' },
-      { id: 'u3', nama: 'Iskandar', peranan: 'penyelia' },
-      { id: 'u4', nama: 'Husni Yahya', peranan: 'penyelia' },
-      { id: 'u5', nama: 'Akaun Kaiser', peranan: 'akaun' },
-      { id: 'u6', nama: 'Muhd Nasrun', peranan: 'pekerja', tarikhMula: '2012-03-01' },
+      { id: 'u1', nama: 'Mohd. Rasidi', peranan: 'pengarah', pengarahUtama: true, jawatan: 'Pengarah Urusan', kumpulanId: 'G1' },
+      { id: 'u2', nama: 'Ahmad Azli', peranan: 'pengurus', jawatan: 'Pengurus Projek', templat: 'pengurusProjek', kuasa: Object.fromEntries(['tetapanPekerja', 'lulusCuti', 'jadual', 'susunKumpulan', 'projek', 'sahkan', 'lihatHadir', 'belian', 'bukaVO', 'jamKontrak', 'tunaiTapak', 'pantauan', 'aksesAdmin', 'adminCuti', 'adminKumpulan', 'adminSemak', 'adminHadir', 'dashboard'].map((k) => [k, true])), skopKumpulan: ['semua'], kumpulanId: 'G1' },
+      { id: 'u3', nama: 'Iskandar', peranan: 'penyelia', staffId: 'K002', jawatan: 'Penyelia Tapak', templat: 'penyelia', kuasa: Object.fromEntries(['tetapanPekerja', 'lulusCuti', 'jadual', 'sahkan', 'lihatHadir', 'belian', 'bukaVO', 'jamKontrak', 'tunaiTapak', 'pantauan'].map((k) => [k, true])), skopKumpulan: ['G1'], kumpulanId: 'G1', akaunApps: { status: 'aktif', peranti: null } },
+      { id: 'u4', nama: 'Husni Yahya', peranan: 'penyelia', staffId: 'K003', jawatan: 'Pengurus Tapak', templat: 'penyelia', kuasa: Object.fromEntries(['tetapanPekerja', 'lulusCuti', 'jadual', 'sahkan', 'lihatHadir', 'belian', 'bukaVO', 'jamKontrak', 'tunaiTapak', 'pantauan'].map((k) => [k, true])), skopKumpulan: ['G2'], kumpulanId: 'G2', akaunApps: { status: 'aktif', peranti: null } },
+      { id: 'u5', nama: 'Akaun Kaiser', peranan: 'akaun', jawatan: 'Pengurus Kewangan', templat: 'pengurusKewangan', kuasa: Object.fromEntries(['aksesAdmin', 'adminTuntutan', 'gaji', 'adminTunai', 'eksport', 'dashboard'].map((k) => [k, true])), skopKumpulan: ['semua'], kumpulanId: 'G1' },
+      { id: 'u6', nama: 'Muhd Nasrun', peranan: 'pekerja', staffId: 'K001', jawatan: 'Penyelaras', jenis: 'Tetap', templat: 'pekerja', kuasa: {}, skopKumpulan: [], kumpulanId: 'G1', tarikhMula: '2012-03-01', akaunApps: { status: 'aktif', peranti: null } },
     ];
     const kod = [
       ['FPG-26-CV-001', 'Pembaikan longkang dan konkrit', 'sivil', 30000],
@@ -103,7 +108,8 @@
         { id: uid(), jenis: 'tuntutan', userId: 'u3', tarikh: d(3), jenisTuntutan: 'Tol & parkir', tarikhBelanja: d(3), jumlah: 18.4, keterangan: 'Tol ke pembekal Gebeng (contoh)', kodId: 'k1', resitT: [], status: 'dihantar', nota: '', history: [] },
       ],
       tunai: [{ id: uid(), tarikh: d(1), jumlah: 2000, catatan: 'Imprest awal (contoh)', oleh: 'u5' }],
-      kiraan: [], audit: [],
+      kiraan: [], audit: [], kumpulan, templat: [], logPengelola: [],
+      sulit: [{ id: 'u6', gajiAsas: 2200, elaun: 150, bank: 'Maybank (contoh)', noAkaun: '1234-xxxx (contoh)' }],
     };
   }
 
@@ -139,14 +145,20 @@
           scheduleRender();
         }, (e) => { console.error(coll, e); toast('Tiada akses: ' + coll); }));
       };
-      listen('users', fs.collection('users'));
+      // Pekerja tanpa kuasa hanya membaca profil sendiri; pemegang kuasa membaca pekerja dalam skop kumpulannya.
+      if (admin || utama(u)) listen('users', fs.collection('users'));
+      else if (Object.keys(u.kuasa || {}).length && skopOrang(u).length) listen('users', skopOrang(u).includes('semua') ? fs.collection('users') : fs.collection('users').where('kumpulanId', 'in', skopOrang(u).slice(0, 30)));
+      else this.unsubs.push(fs.collection('users').doc(u.id).onSnapshot((d) => { if (d.exists) { db.users = [Object.assign({ id: d.id }, d.data())]; scheduleRender(); } }, (e) => console.error('users', e)));
+      listen('kumpulan', fs.collection('kumpulan'));
+      listen('templat', fs.collection('templat'));
+      if (bolehLihatGaji(u)) listen('sulit', fs.collection('sulit'));
       listen('kod', fs.collection('kod'));
       ['laporan', 'belian', 'hadir', 'mohon'].forEach((c) => listen(c, admin ? fs.collection(c) : fs.collection(c).where('userId', '==', u.id)));
       if (admin) { listen('tunai', fs.collection('tunai')); listen('kiraan', fs.collection('kiraan')); }
       this.unsubs.push(fs.collection('settings').doc('main').onSnapshot((d) => { db.settings = Object.assign({}, DEFAULT_SETTINGS, d.exists ? d.data() : {}); scheduleRender(); }, () => {}));
     },
   };
-  function emptyDb() { return { v: 1, settings: Object.assign({}, DEFAULT_SETTINGS), users: [], kod: [], belian: [], laporan: [], hadir: [], mohon: [], tunai: [], kiraan: [], audit: [] }; }
+  function emptyDb() { return { v: 1, settings: Object.assign({}, DEFAULT_SETTINGS), users: [], kod: [], belian: [], laporan: [], hadir: [], mohon: [], tunai: [], kiraan: [], audit: [], sulit: [], templat: [], kumpulan: [], logPengelola: [] }; }
 
   // Simpan gambar draf: mod awan → dokumen berasingan dalam koleksi `gambar`, rekod hanya simpan id.
   function persistPhotos(arr) {
@@ -180,6 +192,7 @@
   db.mohon = db.mohon || [];
   db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings);
   const state = { userId: CLOUD ? null : Store.getUser(), draft: null, bulan: thisMonth(), modal: null, screen: CLOUD ? 'loading' : null, authUser: null };
+  if (location.hostname === 'localhost') window.__kaiser = { state, get db() { return db; } };
   const me = () => db.users.find((u) => u.id === state.userId) || null;
   const userName = (id) => (db.users.find((u) => u.id === id) || {}).nama || '—';
   const kodOf = (id) => db.kod.find((k) => k.id === id) || null;
@@ -325,6 +338,8 @@
   function viewCloudLogin() {
     if (state.screen === 'loading') return loginShell('<div class="muted">Memuatkan…</div>');
     if (state.screen === 'wrongapp') return loginShell(wrongAppMsg());
+    if (state.screen === 'pertama') return viewPertama();
+    if (MESEJ_SEKAT[state.screen]) return loginShell(`<div class="notice bad">${MESEJ_SEKAT[state.screen]}</div><button class="btn" data-a="logout">Log keluar</button>`);
     if (state.screen === 'bootstrap' && APP === 'pekerja') return loginShell('<div class="notice bad">Sistem belum disediakan. Pengarah perlu log masuk ke Apps Pengurusan dahulu.</div><button class="btn" data-a="logout">Log keluar</button>');
     if (state.screen === 'bootstrap') return loginShell(`<div class="card stack"><h2>Sediakan sistem</h2>
       <div class="small">Anda pengguna pertama (${esc(state.authUser.email)}). Akaun ini akan didaftarkan sebagai <b>Pengarah</b>, dan anda boleh menambah pengguna lain dalam Tetapan.</div>
@@ -529,13 +544,14 @@
         ${link('dash', 'Utama')}
         ${u.peranan !== 'akaun' ? link('semak', 'Peti semakan', q ? `<span class="badge">${q}</span>` : '') : ''}
         ${link('hadir', 'Kehadiran')}
+        ${bolehDaftar(u) || bolehLihatGaji(u) || isAdmin(u) ? link('pekerja', 'Pekerja') : ''}
         ${link('mohon', 'Permohonan staf', mohonQueue(u).length ? `<span class="badge">${mohonQueue(u).length}</span>` : '')}
         ${link('skop', 'Pantauan skop kerja')}
         ${link('vo', 'Daftar VO')}
         ${link('kod', 'Kod kerja')}
         ${link('tunai', 'Tunai runcit')}
         ${link('eksport', 'Eksport bulanan')}
-        ${u.peranan === 'pengarah' ? link('tetapan', 'Tetapan &amp; pengguna') : ''}
+        ${utama(u) ? link('tetapan', 'Tetapan &amp; sandaran') : ''}
         <a href="${BASE}pekerja/" target="_blank" rel="noopener">Buka Apps Pekerja ↗</a>
         <a href="#" data-a="logout">Log keluar</a>
       </nav>
@@ -555,7 +571,7 @@
     const kos = db.belian.filter((b) => live(b) && inMonth(b, ym)).reduce((s, b) => s + num(b.jumlah), 0);
     const flagged = pendingItems().filter((it) => ['dihantar', 'disahkan'].includes(it.rec.status) && it.flags.length).length;
     const tn = bakiTunai();
-    return adminShell('dash', `
+    return adminShell('dash', `${bannerSandaran()}
       <div class="row between" style="align-items:flex-end">
         <div><div class="muted small">${esc(db.settings.klien)}</div><h1>Selamat datang, ${esc(u.nama)}</h1></div>
         ${monthPicker()}
@@ -729,17 +745,25 @@
         <div class="row"><button class="btn" type="button" data-a="lokasiTapak">Guna lokasi saya sekarang</button></div>
         <div><button class="btn primary" type="submit">Simpan tetapan</button></div>
       </form>
-      <section class="card stack"><h2>Pengguna</h2>
-        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th>Mula kerja</th><th class="n">Hak cuti tahunan / sakit</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false).map((u) => `<tr><td>${esc(u.nama)}${u.staffId ? `<br><span class="muted tiny">ID ${esc(u.staffId)} · log masuk dengan PIN</span>` : u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${PERANAN[u.peranan]}</td><td>${u.tarikhMula ? fmtDate(u.tarikhMula) : '—'}</td><td class="n">${hakCuti(u).Tahunan} / ${hakCuti(u).Sakit} hari</td><td>${u.id !== state.userId ? `${CLOUD && u.staffId ? `<button class="btn sm" data-a="resetPin" data-id="${u.id}">Set semula PIN</button> ` : ''}<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Buang</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
-        <form class="row" data-form="user" style="align-items:flex-end">
+      <section class="card stack"><h2>💾 Sandaran data</h2>
+        <div class="small">Pelan Spark tiada sandaran automatik. Muat turun sandaran <b>setiap minggu</b> dan simpan fail di tempat selamat (cth. Google Drive peribadi). Fail ini mengandungi data peribadi pekerja: jangan kongsi.</div>
+        <div class="small">Sandaran terakhir: <b>${db.settings.sandaranTerakhir ? esc(new Date(db.settings.sandaranTerakhir).toLocaleString('ms-MY')) : 'belum pernah'}</b></div>
+        <label class="small"><input type="checkbox" id="sandaranGambar"> Termasuk gambar (fail lebih besar, guna lebih banyak kuota bacaan)</label>
+        <div><button class="btn primary" data-a="sandaran">Muat turun sandaran</button></div>
+      </section>
+      <section class="card stack"><h2>Migrasi ke model kuasa</h2>
+        <div class="small">Tukar peranan lama kepada templat kuasa, isi kumpulan pekerja dan rekod lama, dan sediakan status apps. Tiada data dipadam. ${db.settings.migrasi ? `<b>Sudah dijalankan ${esc(new Date(db.settings.migrasi.masa).toLocaleDateString('ms-MY'))}.</b> Boleh dijalankan semula dengan selamat.` : '<b>Belum dijalankan.</b>'}</div>
+        <div><button class="btn" data-a="migrasi">Jalankan migrasi</button></div>
+      </section>
+      <section class="card stack"><h2>Akaun emel (Pengarah Utama &amp; pengurusan)</h2>
+        <div class="muted small">Pekerja (ID + PIN) didaftarkan dalam menu <a href="#a-pekerja">Pekerja</a>. Di sini hanya akaun yang log masuk dengan emel, contohnya Datin sebagai Pengarah Utama.</div>
+        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false && !u.staffId).map((u) => `<tr><td>${esc(u.nama)} ${ikonKuasa(u)}${u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${utama(u) ? 'Pengarah Utama' : PERANAN[u.peranan]}</td><td>${u.id !== state.userId ? `<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Nyahaktif</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+        <form class="row" data-form="user" style="align-items:flex-end;flex-wrap:wrap">
           <label class="f" style="flex:1 1 200px">Nama<input class="i" name="nama" required></label>
-          ${CLOUD ? `<label class="f" style="flex:1 1 140px">ID pekerja <span class="muted tiny" style="font-weight:400">(Pekerja / Penyelia)</span><input class="i" name="staffId" placeholder="K001" style="text-transform:uppercase"></label>
-          <label class="f" style="flex:1 1 120px">PIN 6 digit<input class="i" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"></label>
-          <label class="f" style="flex:1 1 220px">Emel <span class="muted tiny" style="font-weight:400">(Pengurus / Pengarah / Akaun)</span><input class="i" type="email" name="email"></label>
-          <label class="f" style="flex:1 1 160px">Kata laluan sementara<input class="i" name="password" minlength="6"></label>` : ''}
-          <label class="f" style="flex:1 1 160px">Tarikh mula kerja<input class="i" type="date" name="tarikhMula"></label>
-          <label class="f" style="flex:1 1 160px">Peranan<select class="i" name="peranan">${Object.keys(PERANAN).map((p) => `<option value="${p}">${PERANAN[p]}</option>`).join('')}</select></label>
-          <button class="btn primary" type="submit">Tambah pengguna</button>
+          ${CLOUD ? `<label class="f" style="flex:1 1 220px">Emel<input class="i" type="email" name="email" required></label>
+          <label class="f" style="flex:1 1 160px">Kata laluan sementara<input class="i" name="password" minlength="6" required></label>` : ''}
+          <label class="f" style="flex:1 1 160px">Peranan<select class="i" name="peranan"><option value="pengarah">Pengarah Utama</option><option value="pengurus">Pengurus (lama)</option><option value="akaun">Akaun (lama)</option></select></label>
+          <button class="btn primary" type="submit">Tambah akaun emel</button>
         </form>
       </section>
       ${CLOUD ? `<section class="card stack"><h2>Sambungan</h2><div class="small">Disambung ke Firebase projek <b>${esc(CFG.projectId)}</b>.</div></section>` : `<section class="card stack"><h2>Data demo</h2><div class="muted small">Padam semua rekod dalam pelayar ini dan mula semula dengan data contoh.</div><div><button class="btn danger" data-a="reset">Set semula data demo</button></div></section>`}`);
@@ -1266,6 +1290,541 @@
       <button class="btn primary" type="submit">Tukar PIN</button></form></main>`;
   }
 
+  // ================= PERINGKAT 1: KUASA, KUMPULAN & PENDAFTARAN PEKERJA =================
+  const KUASA_URUS = [
+    { k: 'tetapanPekerja', ikon: '🆔', label: 'Tetapan pekerja', ket: 'Daftar pekerja, ubah maklumat asas, set semula PIN, lepaskan telefon, aktif/nyahaktif. Bukan gaji, IC, bank atau kuasa.' },
+    { k: 'lulusCuti', ikon: '📅', label: 'Lulus cuti', ket: 'Meluluskan permohonan cuti kumpulan.' },
+    { k: 'jadual', ikon: '🗓', label: 'Jadual kerja', ket: 'Roster, syif dan tugasan harian ikut tapak.' },
+    { k: 'susunKumpulan', ikon: '🧩', label: 'Susun kumpulan & pindah pekerja', ket: 'Memindahkan pekerja antara kumpulan dalam skop.' },
+    { k: 'projek', ikon: '🏗', label: 'Projek & kod kerja', ket: 'Buka dan tutup projek serta kod kerja.' },
+    { k: 'sahkan', ikon: '✅', label: 'Sahkan laporan & resit', ket: 'Pengesahan peringkat 1.' },
+    { k: 'lihatHadir', ikon: '👀', label: 'Lihat kehadiran', ket: 'Kehadiran kumpulan.' },
+    { k: 'belian', ikon: '🧾', label: 'Resit & belian', ket: 'Merekod belian dan resit.' },
+    { k: 'bukaVO', ikon: '📣', label: 'Buka kod VO', ket: 'Arahan kerja tambahan klien.' },
+    { k: 'jamKontrak', ikon: '👷', label: 'Rekod jam pekerja kontrak', ket: 'Direkod secara berkumpulan.' },
+    { k: 'tunaiTapak', ikon: '💵', label: 'Tunai runcit tapak', ket: 'Petty cash di tapak.' },
+    { k: 'pantauan', ikon: '📊', label: 'Pantauan kumpulan & projek', ket: 'Ringkasan kumpulan dan projek.' },
+  ];
+  const KUASA_ADMIN = [
+    { k: 'aksesAdmin', ikon: '🖥', label: 'Akses Apps Admin', ket: 'Induk: tanpa ini, modul di bawah tidak aktif.', induk: true },
+    { k: 'daftarPekerja', ikon: '👥', label: 'Pendaftaran pekerja', ket: 'Bukan gaji, bank atau kuasa.' },
+    { k: 'adminCuti', ikon: '📅', label: 'Cuti & jadual kerja', ket: '' },
+    { k: 'adminKumpulan', ikon: '🧩', label: 'Kumpulan operasi & projek', ket: '' },
+    { k: 'adminSemak', ikon: '✅', label: 'Peti semakan', ket: 'Sahkan peringkat 1.' },
+    { k: 'adminHadir', ikon: '👀', label: 'Kehadiran', ket: '' },
+    { k: 'adminTuntutan', ikon: '💳', label: 'Tuntutan, petty cash & pendahuluan', ket: 'Semak dan tanda dibayar. Bukan lulus.' },
+    { k: 'gaji', ikon: '💰', label: 'Gaji & eksport gaji', ket: 'Baca gaji, IC dan bank. Hanya Pengarah Utama boleh mengubahnya.' },
+    { k: 'adminTunai', ikon: '💵', label: 'Tunai runcit & stok', ket: '' },
+    { k: 'eksport', ikon: '📤', label: 'Eksport perakaunan & laporan', ket: '' },
+    { k: 'dashboard', ikon: '📊', label: 'Dashboard pengurusan', ket: '' },
+  ];
+  const SEMUA_KUASA = KUASA_URUS.concat(KUASA_ADMIN);
+  const kunci = (arr) => Object.fromEntries(arr.map((k) => [k, true]));
+  const TEMPLAT_ASAS = [
+    { id: 'pekerja', nama: 'Pekerja', skop: 'tiada', kuasa: {} },
+    { id: 'penyelia', nama: 'Penyelia', skop: 'sendiri', kuasa: kunci(['tetapanPekerja', 'lulusCuti', 'jadual', 'sahkan', 'lihatHadir', 'belian', 'bukaVO', 'jamKontrak', 'tunaiTapak', 'pantauan']) },
+    { id: 'pengurusOperasi', nama: 'Pengurus Operasi', skop: 'semua', kuasa: kunci(KUASA_URUS.map((x) => x.k).concat(['aksesAdmin', 'adminCuti', 'adminKumpulan', 'adminSemak', 'adminHadir', 'dashboard'])) },
+    { id: 'pengurusProjek', nama: 'Pengurus Projek', skop: 'semua', kuasa: kunci(KUASA_URUS.map((x) => x.k).concat(['aksesAdmin', 'adminCuti', 'adminKumpulan', 'adminSemak', 'adminHadir', 'dashboard'])) },
+    { id: 'kerani', nama: 'Kerani', skop: 'semua', kuasa: kunci(['aksesAdmin', 'daftarPekerja', 'adminCuti', 'adminHadir']) },
+    { id: 'pengurusKewangan', nama: 'Pengurus Kewangan', skop: 'semua', kuasa: kunci(['aksesAdmin', 'adminTuntutan', 'gaji', 'adminTunai', 'eksport', 'dashboard']) },
+  ];
+  const JAWATAN_ASAS = ['Pekerja Am', 'Juruteknik', 'Juruteknik Elektrik', 'Tukang Kimpal', 'Pemandu', 'Penyelaras', 'Penyelia Tapak', 'Pengurus Tapak', 'Pengurus Projek', 'Pengurus Operasi', 'Kerani', 'Pengurus Kewangan', 'OSH-C', 'QAQC'];
+  const SULIT_MEDAN = [['noIC', 'No. IC'], ['alamat', 'Alamat'], ['gajiAsas', 'Gaji asas (RM)'], ['elaun', 'Elaun tetap (RM)'], ['bank', 'Bank'], ['noAkaun', 'No. akaun bank'], ['noKWSP', 'No. KWSP'], ['noPERKESO', 'No. PERKESO']];
+
+  const utama = (u) => !!u && (u.pengarahUtama === true || u.peranan === 'pengarah');
+  const adaKuasa = (u, k) => utama(u) || !!(u && u.kuasa && u.kuasa[k]);
+  const adaAdmin = (u, k) => utama(u) || (adaKuasa(u, 'aksesAdmin') && adaKuasa(u, k));
+  const ikonKuasa = (u) => (utama(u) ? '👑' : SEMUA_KUASA.filter((x) => u && u.kuasa && u.kuasa[x.k]).map((x) => x.ikon).join(''));
+  const skopOrang = (u) => (u && u.skopKumpulan) || [];
+  const dalamSkop = (u, kid) => utama(u) || skopOrang(u).includes('semua') || skopOrang(u).includes(kid);
+  const bolehDaftar = (u) => utama(u) || adaKuasa(u, 'tetapanPekerja') || adaAdmin(u, 'daftarPekerja');
+  const bolehLihatGaji = (u) => utama(u) || adaAdmin(u, 'gaji');
+  const biasa = (p) => !utama(p) && !Object.keys((p && p.kuasa) || {}).some((k) => p.kuasa[k]) && !skopOrang(p).length;
+  const bolehUrus = (u, p) => !!p && bolehDaftar(u) && p.id !== u.id && (utama(u) || (biasa(p) && dalamSkop(u, p.kumpulanId)));
+  const templatList = () => (db.templat && db.templat.length ? TEMPLAT_ASAS.map((t) => Object.assign({}, t, db.templat.find((x) => x.id === t.id) || {})).concat(db.templat.filter((x) => !TEMPLAT_ASAS.some((t) => t.id === x.id))) : TEMPLAT_ASAS);
+  const templatOf = (id) => templatList().find((t) => t.id === id) || null;
+  const kumpulanList = () => (db.kumpulan || []).filter((k) => k.aktif !== false);
+  const kumpulanOf = (id) => (db.kumpulan || []).find((k) => k.id === id) || null;
+  const kumpulanNama = (id) => (kumpulanOf(id) || {}).nama || '—';
+  const jawatanList = () => (db.settings.jawatan && db.settings.jawatan.length ? db.settings.jawatan : JAWATAN_ASAS);
+  const sulitOf = (id) => (db.sulit || []).find((s) => s.id === id) || {};
+  const linkPekerja = () => { try { return new URL(BASE + 'pekerja/', location.href).href.replace(/#.*$/, ''); } catch (e) { return 'pekerja/'; } };
+  const telWa = (t) => { let d = String(t || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '6' + d; return d; };
+  // Peranan lama dikekalkan untuk keserasian: akaun PIN = pekerja, atau penyelia jika ada kuasa tab Urus.
+  const perananDariKuasa = (p, kuasa) => (!p.staffId || !['pekerja', 'penyelia'].includes(p.peranan || 'pekerja') ? p.peranan : (KUASA_URUS.some((x) => kuasa && kuasa[x.k]) ? 'penyelia' : 'pekerja'));
+
+  function statusApps(p) {
+    if (p.aktif === false) return ['Dinyahaktif', 'ditolak'];
+    if (!p.staffId) return ['Log masuk emel', 'diluluskan'];
+    const a = p.akaunApps;
+    if (!a) return ['Aktif (sebelum migrasi)', 'disahkan'];
+    if (a.status === 'sementara') return (a.tamatMs || 0) < Date.now() ? ['PIN sementara tamat', 'dikembalikan'] : [`Belum aktif · PIN sementara tamat ${new Date(a.tamatMs).toLocaleDateString('ms-MY')}`, 'dihantar'];
+    if (a.peranti) return [`Aktif · ${a.peranti.nama || 'telefon'}`, 'diluluskan'];
+    return ['Aktif · telefon belum dikunci', 'disahkan'];
+  }
+  const statusPill = (p) => { const [t, c] = statusApps(p); return `<span class="pill p-${c}">${esc(t)}</span>`; };
+
+  // Log Pengelola: setiap tindakan pemegang kuasa direkod (tidak boleh dipadam).
+  function logP(tindakan, rekod, lama, baharu) {
+    const u = me();
+    const e = { oleh: u.id, nama: u.nama, apps: APP, tindakan, rekod: rekod || '', lama: lama == null ? null : clean(lama), baharu: baharu == null ? null : clean(baharu) };
+    if (CLOUD) return fs.collection('logPengelola').doc(uid()).set(Object.assign(e, { masa: firebase.firestore.FieldValue.serverTimestamp() })).catch((er) => console.error('logP', er));
+    (db.logPengelola = db.logPengelola || []).push(Object.assign(e, { id: uid(), masa: new Date().toISOString() }));
+    Store.save(db);
+  }
+
+  const Akaun = CLOUD && window.KaiserAkaun ? window.KaiserAkaun.buat({ fs, CFG, firebase }) : null;
+  // Mod demo: tiada akaun log masuk sebenar; PIN hanya dipaparkan.
+  const AkaunDemo = {
+    async daftar(profil, sulit) {
+      const id = normId(profil.staffId);
+      if (db.users.some((u) => u.staffId === id)) throw { code: 'kaiser/id-wujud' };
+      const pin = window.KaiserAkaun ? window.KaiserAkaun.pinRawak() : '123456';
+      const tamatMs = Date.now() + 7 * 864e5;
+      const p = Object.assign({}, profil, { id: 'P' + uid(), staffId: id, aktif: true, ver: 1, akaunApps: { status: 'sementara', peranti: null, tamatMs } });
+      db.users.push(p);
+      if (sulit) (db.sulit = db.sulit || []).push(Object.assign({ id: p.id }, sulit));
+      Store.save(db);
+      return { profilId: p.id, staffId: id, pin, tamatMs };
+    },
+    async setSemulaPin(u) {
+      const pin = window.KaiserAkaun ? window.KaiserAkaun.pinRawak() : '123456';
+      const tamatMs = Date.now() + 7 * 864e5;
+      u.ver = (num(u.ver) || 1) + 1; u.akaunApps = { status: 'sementara', peranti: null, tamatMs }; Store.save(db);
+      return { staffId: u.staffId, pin, tamatMs };
+    },
+    async lepaskanPeranti(u) { u.akaunApps = Object.assign({}, u.akaunApps || {}, { peranti: null }); Store.save(db); },
+  };
+  const akaun = () => Akaun || AkaunDemo;
+  const nextStaffId = () => {
+    const n = db.users.map((u) => /^K(\d+)$/.exec(u.staffId || '')).filter(Boolean).map((m) => Number(m[1]));
+    return 'K' + String((n.length ? Math.max(...n) : 0) + 1).padStart(3, '0');
+  };
+
+  // ---------- Paparan: tab 👥 Pekerja ----------
+  function pekerjaNav(on) {
+    const u = me();
+    const t = (r, l) => `<a class="btn sm ${on === r ? 'primary' : ''}" href="#a-pekerja${r ? '-' + r : ''}">${l}</a>`;
+    return `<div class="row" style="gap:6px;flex-wrap:wrap">${t('', 'Senarai')}${bolehDaftar(u) ? t('daftar', '+ Daftar pekerja') : ''}${bolehLihatGaji(u) ? t('gaji', 'Gaji') : ''}${t('jawatan', 'Jawatan, templat &amp; kumpulan')}</div>`;
+  }
+  function dalamSkopSaya(p) { const u = me(); return utama(u) || isAdmin(u) || dalamSkop(u, p.kumpulanId) || p.id === u.id; }
+
+  function viewPekerjaSenarai() {
+    const u = me();
+    const list = db.users.filter(dalamSkopSaya).sort((a, b) => (kumpulanNama(a.kumpulanId) + a.nama).localeCompare(kumpulanNama(b.kumpulanId) + b.nama));
+    return adminShell('pekerja', `<h1>Pekerja</h1>${pekerjaNav('')}
+      ${state.hasilPin ? kadPin(state.hasilPin) : ''}
+      <div class="card"><div class="tbl"><table style="min-width:560px"><thead><tr><th>Nama</th><th>ID</th><th>Jawatan</th><th>Kumpulan</th><th>Apps</th></tr></thead><tbody>
+      ${list.map((p) => `<tr style="cursor:pointer" data-a="bukaPekerja" data-id="${p.id}"><td><b>${esc(p.nama)}</b> <span title="Kuasa">${ikonKuasa(p)}</span></td><td>${esc(p.staffId || (p.email ? 'emel' : '—'))}</td><td>${esc(p.jawatan || PERANAN[p.peranan] || '')}</td><td>${esc(kumpulanNama(p.kumpulanId))}</td><td>${statusPill(p)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Tiada pekerja.</td></tr>'}
+      </tbody></table></div></div>
+      ${bolehDaftar(u) ? '' : '<div class="muted small">Anda tiada kuasa mendaftar pekerja.</div>'}`);
+  }
+
+  function kadPin(h) {
+    const tamat = new Date(h.tamatMs).toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' });
+    const msg = `Assalamualaikum ${h.nama}.\n\nApps Kaiser Pekerja:\n${linkPekerja()}\n\n1. Buka link dalam Chrome (Android) atau Safari (iPhone), kemudian pasang apps (menu ⋮ → Install app / Kongsi → Add to Home Screen).\n2. Masuk dengan ID: ${h.staffId}\n   PIN sementara: ${h.pin}\n3. Cipta PIN baharu anda sendiri.\n\nPIN sementara tamat ${tamat}. Satu telefon untuk satu pekerja. Jangan kongsi PIN dengan sesiapa.`;
+    const tel = telWa(h.telefon);
+    return `<section class="card stack" style="border:2px solid var(--accent, #0FA3A3)">
+      <h2>${h.baru ? '✅ Pekerja didaftarkan' : '🔑 PIN sementara baharu'}: ${esc(h.nama)}</h2>
+      <div class="grid2"><div><div class="muted tiny">ID pekerja</div><div style="font-size:26px;font-weight:800">${esc(h.staffId)}</div></div>
+      <div><div class="muted tiny">PIN sementara</div><div style="font-size:26px;font-weight:800;letter-spacing:3px">${esc(h.pin)}</div></div></div>
+      <div class="small">PIN ini hanya dipaparkan <b>sekali</b> dan tamat <b>${esc(tamat)}</b>. Pekerja wajib menukar PIN semasa log masuk pertama.</div>
+      <div class="small">Link apps: <b>${esc(linkPekerja())}</b></div>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <a class="btn accent" target="_blank" rel="noopener" href="https://wa.me/${tel}?text=${encodeURIComponent(msg)}">📲 Hantar melalui WhatsApp</a>
+        <button class="btn" data-a="salinPin" data-t="${esc(msg)}">Salin mesej</button>
+        <button class="btn" data-a="tutupPin">Tutup</button>
+      </div></section>`;
+  }
+
+  function borangKerja(p, opts) {
+    const u = me(); const o = opts || {};
+    const ro = o.readonly ? 'disabled' : '';
+    const kumpulanBoleh = kumpulanList().filter((k) => utama(u) || dalamSkop(u, k.id) || k.id === p.kumpulanId);
+    const w = p.waris || {};
+    return `<div class="grid-auto">
+      <label class="f">Nama penuh<input class="i" name="nama" value="${esc(p.nama)}" required ${ro}></label>
+      <label class="f">ID pekerja<input class="i" name="staffId" value="${esc(p.staffId || '')}" ${o.baru ? 'required' : 'disabled'} style="text-transform:uppercase"></label>
+      <label class="f">Jawatan<input class="i" name="jawatan" list="dl-jawatan" value="${esc(p.jawatan || '')}" required ${ro}></label>
+      <label class="f">Jenis<select class="i" name="jenis" ${ro}>${['Tetap', 'Kontrak'].map((j) => `<option ${p.jenis === j ? 'selected' : ''}>${j}</option>`).join('')}</select></label>
+      <label class="f">Kumpulan<select class="i" name="kumpulanId" required ${ro}><option value="">— pilih —</option>${kumpulanBoleh.map((k) => `<option value="${k.id}" ${p.kumpulanId === k.id ? 'selected' : ''}>${esc(k.nama)}</option>`).join('')}</select></label>
+      <label class="f">No. telefon<input class="i" name="telefon" inputmode="tel" value="${esc(p.telefon || '')}" placeholder="01x-xxxxxxx" ${ro}></label>
+      <label class="f">Tarikh mula kerja<input class="i" type="date" name="tarikhMula" value="${esc(p.tarikhMula || '')}" ${ro}></label>
+      <label class="f">Waris (nama)<input class="i" name="warisNama" value="${esc(w.nama || '')}" ${ro}></label>
+      <label class="f">Waris (telefon)<input class="i" name="warisTelefon" inputmode="tel" value="${esc(w.telefon || '')}" ${ro}></label>
+    </div><datalist id="dl-jawatan">${jawatanList().map((j) => `<option value="${esc(j)}">`).join('')}</datalist>`;
+  }
+  function borangSulit(s, ro) {
+    return `<div class="grid-auto">${SULIT_MEDAN.map(([k, l]) => `<label class="f">${l}<input class="i" name="s_${k}" value="${esc(s[k] || '')}" ${ro ? 'disabled' : ''} ${/gaji|elaun/i.test(k) ? 'inputmode="decimal"' : ''}></label>`).join('')}</div>`;
+  }
+  const ambilSulit = (fd) => { const o = {}; SULIT_MEDAN.forEach(([k]) => { const v = (fd['s_' + k] || '').trim(); if (v) o[k] = /gaji|elaun/i.test(k) ? num(v) : v; }); return o; };
+  const ambilProfil = (fd) => ({ nama: fd.nama.trim(), jawatan: (fd.jawatan || '').trim(), jenis: fd.jenis || 'Tetap', kumpulanId: fd.kumpulanId || '', telefon: (fd.telefon || '').trim(), tarikhMula: fd.tarikhMula || '', waris: { nama: (fd.warisNama || '').trim(), telefon: (fd.warisTelefon || '').trim() } });
+
+  function viewPekerjaDaftar() {
+    const u = me();
+    if (!bolehDaftar(u)) return viewPekerjaSenarai();
+    return adminShell('pekerja', `<h1>Daftar pekerja</h1>${pekerjaNav('daftar')}
+      <form class="card stack" data-form="daftarPekerja">
+        <h2>Borang kerja</h2>
+        ${borangKerja({ staffId: nextStaffId(), jenis: 'Tetap', kumpulanId: (kumpulanList().find((k) => dalamSkop(u, k.id)) || {}).id }, { baru: true })}
+        ${utama(u) ? `<label class="f">Templat kuasa<select class="i" name="templat">${templatList().map((t) => `<option value="${t.id}">${esc(t.nama)}</option>`).join('')}</select></label>
+          <div class="muted tiny">Kotak kuasa ditanda mengikut templat. Ubah satu-satu dalam profil pekerja selepas didaftarkan.</div>
+          <details><summary class="small"><b>Gaji, IC &amp; bank</b> (Pengarah Utama sahaja)</summary>${borangSulit({}, false)}</details>`
+        : '<div class="muted tiny">Pekerja baharu didaftarkan tanpa kuasa. Gaji, IC dan bank diisi oleh Pengarah Utama.</div>'}
+        <div class="notice small">Sistem akan menjana <b>PIN sementara</b> (tamat 7 hari). Pekerja wajib menukarnya semasa log masuk pertama, dan apps akan dikunci pada telefonnya.</div>
+        <button class="btn primary" type="submit">Daftar &amp; jana PIN</button>
+      </form>`);
+  }
+
+  function viewPekerjaProfil(id) {
+    const u = me(); const p = db.users.find((x) => x.id === id);
+    if (!p || !dalamSkopSaya(p)) return viewPekerjaSenarai();
+    const boleh = bolehUrus(u, p);
+    const pr = p.akaunApps && p.akaunApps.peranti;
+    const t = templatOf(p.templat);
+    const kotak = (x) => `<label class="kuasa" style="display:flex;gap:10px;align-items:flex-start;padding:8px;border:1px solid var(--line,#dde3ea);border-radius:10px">
+        <input type="checkbox" name="k_${x.k}" ${p.kuasa && p.kuasa[x.k] ? 'checked' : ''} ${utama(u) && !utama(p) ? '' : 'disabled'} style="width:22px;height:22px;margin-top:2px">
+        <span><b>${x.ikon} ${esc(x.label)}</b>${x.ket ? `<br><span class="muted tiny">${esc(x.ket)}</span>` : ''}</span></label>`;
+    return adminShell('pekerja', `<h1>${esc(p.nama)} <span title="Kuasa">${ikonKuasa(p)}</span></h1>${pekerjaNav('')}
+      ${state.hasilPin && state.hasilPin.staffId === p.staffId ? kadPin(state.hasilPin) : ''}
+      <section class="card stack"><h2>Apps pekerja</h2>
+        <div>${statusPill(p)} ${p.staffId ? `<span class="muted small">ID ${esc(p.staffId)}</span>` : `<span class="muted small">${esc(p.email || '')}</span>`}</div>
+        ${pr ? `<div class="small">Dikunci pada: <b>${esc(pr.nama || 'telefon')}</b> sejak ${esc(new Date(pr.masa).toLocaleDateString('ms-MY'))}</div>` : ''}
+        ${boleh && p.staffId ? `<div class="row" style="gap:8px;flex-wrap:wrap">
+          <button class="btn" data-a="pinPekerja" data-id="${p.id}">🔑 Set semula PIN</button>
+          ${pr ? `<button class="btn" data-a="lepasPeranti" data-id="${p.id}">📱 Lepaskan telefon</button>` : ''}
+          <button class="btn ${p.aktif === false ? 'primary' : 'danger'}" data-a="aktifPekerja" data-id="${p.id}">${p.aktif === false ? 'Aktifkan semula' : 'Nyahaktif'}</button></div>` : ''}
+      </section>
+      <form class="card stack" data-form="profilPekerja" data-id="${p.id}"><h2>Borang kerja</h2>
+        ${borangKerja(p, { readonly: !boleh })}
+        ${boleh ? '<div><button class="btn primary" type="submit">Simpan</button></div>' : ''}
+      </form>
+      <form class="card stack" data-form="kuasaPekerja" data-id="${p.id}"><h2>Kuasa</h2>
+        ${utama(p) ? '<div class="small">👑 Pengarah Utama: semua kuasa.</div>' : `
+        ${utama(u) ? `<div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap"><label class="f" style="flex:1 1 200px">Templat<select class="i" name="templat">${templatList().map((x) => `<option value="${x.id}" ${p.templat === x.id ? 'selected' : ''}>${esc(x.nama)}</option>`).join('')}</select></label><button class="btn" type="button" data-a="gunaTemplat" data-id="${p.id}">Tanda ikut templat</button></div>` : `<div class="small">Templat: <b>${esc(t ? t.nama : '—')}</b>. Hanya Pengarah Utama boleh mengubah kuasa.</div>`}
+        <h3>Kumpulan 1 · tab 🛠 Urus (Apps Pekerja)</h3><div class="stack" style="gap:6px">${KUASA_URUS.map(kotak).join('')}</div>
+        <h3>Kumpulan 2 · Apps Admin</h3><div class="stack" style="gap:6px">${KUASA_ADMIN.map(kotak).join('')}</div>
+        <h3>Skop kumpulan</h3><div class="row" style="gap:12px;flex-wrap:wrap">
+          <label class="small"><input type="checkbox" name="sk_semua" ${skopOrang(p).includes('semua') ? 'checked' : ''} ${utama(u) ? '' : 'disabled'}> Semua kumpulan</label>
+          ${kumpulanList().map((k) => `<label class="small"><input type="checkbox" name="sk_${k.id}" ${skopOrang(p).includes(k.id) ? 'checked' : ''} ${utama(u) ? '' : 'disabled'}> ${esc(k.nama)}</label>`).join('')}</div>
+        ${utama(u) ? '<div><button class="btn primary" type="submit">Simpan kuasa</button></div>' : ''}`}
+      </form>
+      ${bolehLihatGaji(u) ? `<form class="card stack" data-form="sulitPekerja" data-id="${p.id}"><h2>Gaji, IC &amp; bank ${utama(u) ? '' : '<span class="muted tiny">(baca sahaja)</span>'}</h2>
+        ${borangSulit(sulitOf(p.id), !utama(u))}
+        ${utama(u) ? '<div><button class="btn primary" type="submit">Simpan</button></div>' : ''}</form>` : ''}`);
+  }
+
+  function viewPekerjaGaji() {
+    const u = me();
+    if (!bolehLihatGaji(u)) return viewPekerjaSenarai();
+    const list = db.users.filter((p) => p.aktif !== false).sort((a, b) => a.nama.localeCompare(b.nama));
+    return adminShell('pekerja', `<h1>Gaji pekerja</h1>${pekerjaNav('gaji')}
+      <div class="muted small">${utama(u) ? 'Tekan nama untuk mengubah.' : 'Baca sahaja. Hanya Pengarah Utama boleh mengubah gaji dan bank.'}</div>
+      <div class="card"><div class="tbl"><table style="min-width:620px"><thead><tr><th>Nama</th><th>Jawatan</th><th class="n">Gaji asas</th><th class="n">Elaun</th><th>Bank</th><th>No. akaun</th></tr></thead><tbody>
+      ${list.map((p) => { const s = sulitOf(p.id); return `<tr style="cursor:pointer" data-a="bukaPekerja" data-id="${p.id}"><td>${esc(p.nama)}</td><td>${esc(p.jawatan || '')}</td><td class="n">${s.gajiAsas ? rm(s.gajiAsas) : '—'}</td><td class="n">${s.elaun ? rm(s.elaun) : '—'}</td><td>${esc(s.bank || '—')}</td><td>${esc(s.noAkaun || '—')}</td></tr>`; }).join('')}
+      </tbody></table></div></div>`);
+  }
+
+  function viewPekerjaJawatan() {
+    const u = me(); const U = utama(u);
+    const bil = (kid) => db.users.filter((p) => p.kumpulanId === kid && p.aktif !== false).length;
+    const pilihOrang = (name, sel) => `<select class="i" name="${name}" ${U ? '' : 'disabled'}><option value="">—</option>${db.users.filter((p) => p.aktif !== false).map((p) => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}</select>`;
+    return adminShell('pekerja', `<h1>Jawatan, templat &amp; kumpulan</h1>${pekerjaNav('jawatan')}
+      <section class="card stack"><h2>Kumpulan operasi</h2>
+        <div class="muted small">Kumpulan ikut pasukan penyelia. Nama di bawah ialah data contoh dan boleh ditukar.</div>
+        ${(db.kumpulan || []).map((k) => `<form class="row" data-form="kumpulan" data-id="${k.id}" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <label class="f" style="flex:2 1 180px">Nama<input class="i" name="nama" value="${esc(k.nama)}" ${U ? '' : 'disabled'}></label>
+          <label class="f" style="flex:1 1 150px">Penyelia${pilihOrang('penyelia', (k.penyelia || [])[0])}</label>
+          <label class="f" style="flex:1 1 150px">Pengurus${pilihOrang('pengurus', (k.pengurus || [])[0])}</label>
+          <span class="small muted" style="padding-bottom:10px">${bil(k.id)} orang${k.aktif === false ? ' · tidak aktif' : ''}</span>
+          ${U ? '<button class="btn sm primary" type="submit">Simpan</button>' : ''}</form>`).join('') || '<div class="muted small">Belum ada kumpulan.</div>'}
+        ${U ? `<form class="row" data-form="kumpulanBaru" style="gap:8px;align-items:flex-end"><label class="f" style="flex:1">Kumpulan baharu<input class="i" name="nama" placeholder="Contoh: Pasukan Iskandar" required></label><button class="btn" type="submit">Tambah</button></form>` : ''}
+      </section>
+      <section class="card stack"><h2>Templat jawatan</h2>
+        <div class="tbl"><table style="min-width:420px"><thead><tr><th>Templat</th><th>Kuasa</th><th>Skop</th></tr></thead><tbody>
+        ${templatList().map((t) => `<tr><td><b>${esc(t.nama)}</b></td><td>${SEMUA_KUASA.filter((x) => t.kuasa && t.kuasa[x.k]).map((x) => `<span title="${esc(x.label)}">${x.ikon}</span>`).join(' ') || '<span class="muted">tiada</span>'}</td><td class="small">${{ tiada: '—', sendiri: 'Kumpulan sendiri', semua: 'Semua / di bawahnya' }[t.skop] || esc(t.skop)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="muted tiny">Templat hanya menanda kotak secara automatik semasa mendaftar. Kuasa sebenar setiap orang diubah dalam profilnya.</div>
+      </section>
+      <section class="card stack"><h2>Senarai jawatan</h2>
+        <div class="row" style="gap:6px;flex-wrap:wrap">${jawatanList().map((j) => `<span class="pill p-disahkan">${esc(j)}${U ? ` <a href="#" data-a="buangJawatan" data-v="${esc(j)}" aria-label="Buang">✕</a>` : ''}</span>`).join('')}</div>
+        ${U ? `<form class="row" data-form="jawatanBaru" style="gap:8px;align-items:flex-end"><label class="f" style="flex:1">Jawatan baharu<input class="i" name="nama" required></label><button class="btn" type="submit">Tambah</button></form>` : ''}
+      </section>`);
+  }
+
+  // ---------- Sandaran (Spark tiada sandaran automatik) ----------
+  const KOLEKSI_SANDARAN = ['users', 'sulit', 'akses', 'idmap', 'peranti', 'templat', 'kumpulan', 'settings', 'meta', 'kod', 'laporan', 'belian', 'hadir', 'mohon', 'tunai', 'kiraan', 'audit', 'logPengelola'];
+  function muatTurunFail(nama, teks, jenis) {
+    const blob = new Blob([teks], { type: jenis || 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nama;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  async function buatSandaran(denganGambar) {
+    const out = { apps: 'Kaiser', versi: 1, projek: CLOUD ? CFG.projectId : 'demo', masa: new Date().toISOString(), oleh: me().nama, data: {} };
+    if (CLOUD) {
+      const senarai = KOLEKSI_SANDARAN.concat(denganGambar ? ['gambar'] : []);
+      for (const c of senarai) {
+        const snap = await fs.collection(c).get();
+        out.data[c] = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      }
+      await fs.collection('settings').doc('main').set({ sandaranTerakhir: out.masa }, { merge: true });
+    } else {
+      out.data = clean(db);
+      db.settings.sandaranTerakhir = out.masa; Store.save(db);
+    }
+    const n = Object.values(out.data).reduce((a, v) => a + (Array.isArray(v) ? v.length : 0), 0);
+    muatTurunFail(`sandaran-kaiser-${today()}.json`, JSON.stringify(out));
+    logP('Muat turun sandaran', `${n} rekod${denganGambar ? ' + gambar' : ''}`);
+    return n;
+  }
+  const hariSejakSandaran = () => { const t = db.settings.sandaranTerakhir; return t ? Math.floor((Date.now() - Date.parse(t)) / 864e5) : null; };
+  function bannerSandaran() {
+    if (!utama(me())) return '';
+    const h = hariSejakSandaran();
+    if (h !== null && h < 7) return '';
+    return `<a class="notice bad" href="#a-tetapan" style="text-decoration:none;display:block"><b>💾 ${h === null ? 'Belum pernah buat sandaran.' : `Sandaran terakhir ${h} hari lalu.`}</b> Tekan untuk muat turun sandaran mingguan.</a>`;
+  }
+
+  // ---------- Migrasi peranan lama → kuasa ----------
+  async function jalankanMigrasi() {
+    const ops = [];
+    let kums = (db.kumpulan || []).slice();
+    if (!kums.length) {
+      const k = { id: 'KUMUM', nama: 'Kumpulan Umum (tukar nama)', penyelia: [], pengurus: [], aktif: true };
+      kums = [k]; ops.push(['kumpulan', k]);
+    }
+    const kDefault = kums[0].id;
+    const peta = { penyelia: 'penyelia', pengurus: 'pengurusOperasi', akaun: 'pengurusKewangan', pekerja: 'pekerja' };
+    const userKum = {};
+    db.users.forEach((u) => {
+      const c = {};
+      if (u.peranan === 'pengarah' && !u.pengarahUtama) c.pengarahUtama = true;
+      if (!u.templat && u.peranan !== 'pengarah') {
+        const t = templatOf(peta[u.peranan] || 'pekerja');
+        c.templat = t.id; c.kuasa = Object.assign({}, t.kuasa);
+        c.skopKumpulan = t.skop === 'semua' ? ['semua'] : t.skop === 'sendiri' ? [u.kumpulanId || kDefault] : [];
+      }
+      if (!u.kumpulanId) c.kumpulanId = kDefault;
+      if (u.staffId && !u.akaunApps) c.akaunApps = { status: 'aktif', peranti: null };
+      userKum[u.id] = u.kumpulanId || kDefault;
+      if (Object.keys(c).length) ops.push(['users', Object.assign({}, u, c), c, u]);
+    });
+    const rek = [];
+    ['laporan', 'belian', 'hadir', 'mohon'].forEach((coll) => (db[coll] || []).forEach((r) => { if (!r.kumpulanId && userKum[r.userId]) rek.push([coll, r.id, userKum[r.userId]]); }));
+    if (CLOUD) {
+      const batches = []; let b = fs.batch(), n = 0;
+      const add = (fn) => { fn(b); if (++n >= 400) { batches.push(b); b = fs.batch(); n = 0; } };
+      ops.forEach(([coll, obj, c]) => add((bb) => (coll === 'kumpulan' ? bb.set(fs.collection(coll).doc(obj.id), clean(Object.assign({}, obj, { id: undefined }))) : bb.update(fs.collection('users').doc(obj.id), clean(c)))));
+      db.users.filter((u) => u.staffId).forEach((u) => add((bb) => bb.set(fs.collection('idmap').doc(u.staffId), { profil: u.id }, { merge: true })));
+      rek.forEach(([coll, id, kid]) => add((bb) => bb.update(fs.collection(coll).doc(id), { kumpulanId: kid })));
+      add((bb) => bb.set(fs.collection('settings').doc('main'), { migrasi: { v: 1, masa: new Date().toISOString() } }, { merge: true }));
+      batches.push(b);
+      for (const x of batches) await x.commit();
+    } else {
+      ops.forEach(([coll, obj]) => { if (coll === 'kumpulan') (db.kumpulan = db.kumpulan || []).push(obj); else Object.assign(db.users.find((u) => u.id === obj.id), obj); });
+      rek.forEach(([coll, id, kid]) => { const r = db[coll].find((x) => x.id === id); if (r) r.kumpulanId = kid; });
+      db.settings.migrasi = { v: 1, masa: new Date().toISOString() }; Store.save(db);
+    }
+    logP('Migrasi peranan → kuasa', `${ops.length} profil/kumpulan, ${rek.length} rekod`);
+    return [ops.length, rek.length];
+  }
+
+  // ---------- Apps Pekerja: log masuk pertama & kunci telefon ----------
+  const PERANTI_KEY = 'kaiser_peranti_id';
+  function perantiId() {
+    try { let id = localStorage.getItem(PERANTI_KEY); if (!id) { id = 'D' + uid() + uid(); localStorage.setItem(PERANTI_KEY, id); } return id; } catch (e) { return 'D-tiada-storan'; }
+  }
+  function namaPeranti() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone/.test(ua)) return 'iPhone'; if (/iPad/.test(ua)) return 'iPad';
+    const m = /Android [\d.]+; ([^;)]+)/.exec(ua);
+    if (m) return m[1].replace(/Build.*$/, '').trim() || 'Android';
+    return /Android/.test(ua) ? 'Android' : 'Komputer';
+  }
+  // Pulangan: null jika OK, atau kod skrin sekatan.
+  async function semakPeranti(prof) {
+    const dev = perantiId();
+    const pr = prof.akaunApps && prof.akaunApps.peranti;
+    if (pr && pr.id && pr.id !== dev) return 'perantiLain';
+    const d = await fs.collection('peranti').doc(dev).get();
+    if (d.exists && d.data().profil !== prof.id) return 'perantiMilikLain';
+    if (!pr || !pr.id) {
+      const a = Object.assign({ status: 'aktif' }, prof.akaunApps || {}, { peranti: { id: dev, nama: namaPeranti(), masa: Date.now() } });
+      const b = fs.batch();
+      b.update(fs.collection('users').doc(prof.id), { akaunApps: a });
+      if (!d.exists) b.set(fs.collection('peranti').doc(dev), { profil: prof.id, staffId: prof.staffId || '', masa: Date.now() });
+      await b.commit();
+      prof.akaunApps = a;
+    }
+    return null;
+  }
+  function viewPertama() {
+    return loginShell(`<form class="card stack" data-form="pinPertama">
+      <h2>Selamat datang${state.pertama && state.pertama.nama ? ', ' + esc(state.pertama.nama) : ''}</h2>
+      <div class="notice small"><b>Notis privasi (PDPA 2010).</b> Apps ini merekod <b>gambar swafoto dan lokasi GPS</b> hanya semasa anda menekan Masuk / Keluar Kerja, serta gambar laporan dan resit yang anda hantar. Data digunakan untuk kehadiran, gaji dan tuntutan Kaiser Engineering sahaja, dan hanya dilihat oleh pengurusan yang diberi kuasa.</div>
+      <label class="small" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" name="setuju" required style="width:20px;height:20px"> Saya faham dan bersetuju.</label>
+      <label class="f">Cipta PIN baharu (6 digit)<input class="i" type="password" name="pinBaru" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password" required></label>
+      <label class="f">Ulang PIN baharu<input class="i" type="password" name="pinBaru2" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password" required></label>
+      <div class="muted tiny">Jangan guna tarikh lahir atau nombor mudah seperti 123456. Selepas ini apps dikunci pada telefon ini.</div>
+      <button class="btn primary" type="submit">Simpan PIN &amp; mula</button>
+      <button class="btn" type="button" data-a="logout">Log keluar</button></form>`);
+  }
+  const MESEJ_SEKAT = {
+    tamat: 'PIN sementara anda sudah <b>tamat tempoh</b> (7 hari). Minta pengurus atau Pengarah set semula PIN.',
+    perantiLain: 'Akaun anda <b>dikunci pada telefon lain</b>. Jika anda menukar telefon, minta pengurus tekan <b>Lepaskan telefon</b>.',
+    perantiMilikLain: 'Telefon ini sudah <b>didaftarkan untuk pekerja lain</b>. Satu telefon untuk satu pekerja. Hubungi pengurus.',
+  };
+
+  // Had cubaan salah (di telefon). Sekatan pelayan sebenar menunggu Blaze; Firebase juga menyekat sementara cubaan berlebihan.
+  const CUBAAN_KEY = 'kaiser_cubaan_pin';
+  const cubaan = () => { try { return JSON.parse(localStorage.getItem(CUBAAN_KEY) || '{}'); } catch (e) { return {}; } };
+  const setCubaan = (o) => { try { localStorage.setItem(CUBAAN_KEY, JSON.stringify(o)); } catch (e) { /* abaikan */ } };
+
+  const PK_ACTIONS = {
+    bukaPekerja(el) { state.hasilPin = null; location.hash = '#a-pekerja-p-' + el.dataset.id; },
+    tutupPin() { state.hasilPin = null; render(); },
+    async salinPin(el) { try { await navigator.clipboard.writeText(el.dataset.t); toast('Mesej disalin'); } catch (e) { toast('Tidak dapat menyalin. Guna butang WhatsApp.'); } },
+    async pinPekerja(el) {
+      const p = db.users.find((x) => x.id === el.dataset.id);
+      if (!confirmInline(el, 'Tekan sekali lagi: jana PIN baharu')) return;
+      el.disabled = true;
+      try {
+        const r = await akaun().setSemulaPin(p);
+        state.hasilPin = Object.assign({ nama: p.nama, telefon: p.telefon }, r);
+        logP('Set semula PIN', `${p.staffId} ${p.nama}`);
+        toast('PIN sementara baharu dijana'); render(); window.scrollTo(0, 0);
+      } catch (e) { el.disabled = false; toast(authMsg(e)); }
+    },
+    async lepasPeranti(el) {
+      const p = db.users.find((x) => x.id === el.dataset.id);
+      if (!confirmInline(el, 'Tekan sekali lagi untuk lepaskan')) return;
+      try { const lama = p.akaunApps && p.akaunApps.peranti; await akaun().lepaskanPeranti(p); logP('Lepaskan telefon', `${p.staffId} ${p.nama}`, lama, null); toast('Telefon dilepaskan'); render(); } catch (e) { toast(authMsg(e)); }
+    },
+    async aktifPekerja(el) {
+      const p = db.users.find((x) => x.id === el.dataset.id);
+      if (p.aktif !== false && !confirmInline(el, 'Tekan sekali lagi untuk nyahaktif')) return;
+      const baru = p.aktif === false;
+      p.aktif = baru;
+      if (CLOUD) { try { await fs.collection('users').doc(p.id).update({ aktif: baru }); } catch (e) { p.aktif = !baru; toast(authMsg(e)); return; } } else Store.save(db);
+      logP(baru ? 'Aktifkan pekerja' : 'Nyahaktif pekerja', `${p.staffId || p.email} ${p.nama}`);
+      toast(baru ? 'Pekerja diaktifkan' : 'Pekerja dinyahaktif'); render();
+    },
+    gunaTemplat(el) {
+      const form = el.closest('form'); const t = templatOf(form.elements.namedItem('templat').value);
+      SEMUA_KUASA.forEach((x) => { const c = form.elements.namedItem('k_' + x.k); if (c) c.checked = !!(t.kuasa && t.kuasa[x.k]); });
+      const p = db.users.find((x) => x.id === el.dataset.id);
+      form.querySelectorAll('input[name^="sk_"]').forEach((c) => { c.checked = t.skop === 'semua' ? c.name === 'sk_semua' : t.skop === 'sendiri' ? c.name === 'sk_' + p.kumpulanId : false; });
+      toast(`Kotak ditanda ikut templat ${t.nama}. Tekan Simpan kuasa.`);
+    },
+    async buangJawatan(el) {
+      if (!confirmInline(el, '✕?')) return;
+      const j = jawatanList().filter((x) => x !== el.dataset.v);
+      await simpanSettings({ jawatan: j }); render();
+    },
+    async sandaran(el) {
+      el.disabled = true; const t = el.textContent; el.textContent = 'Menyediakan…';
+      try { const n = await buatSandaran(!!($('#sandaranGambar') || {}).checked); toast(`Sandaran dimuat turun (${n} rekod)`); } catch (e) { console.error(e); toast('Gagal: ' + (e.code || e.message)); }
+      el.disabled = false; el.textContent = t; render();
+    },
+    async migrasi(el) {
+      if (!confirmInline(el, 'Tekan sekali lagi untuk jalankan migrasi')) return;
+      el.disabled = true;
+      try { const [a, b] = await jalankanMigrasi(); toast(`Migrasi selesai: ${a} profil, ${b} rekod`); } catch (e) { console.error(e); toast('Migrasi gagal: ' + (e.code || e.message)); }
+      render();
+    },
+  };
+  async function simpanSettings(c) {
+    Object.assign(db.settings, c);
+    if (CLOUD) await fs.collection('settings').doc('main').set(clean(c), { merge: true }); else Store.save(db);
+  }
+
+  const PK_FORMS = {
+    async daftarPekerja(fd, form) {
+      const u = me();
+      const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Mendaftar…';
+      try {
+        const profil = Object.assign(ambilProfil(fd), { staffId: normId(fd.staffId), peranan: 'pekerja', templat: 'pekerja', kuasa: {}, skopKumpulan: [] });
+        if (!profil.kumpulanId) throw { code: 'kaiser/kumpulan', message: 'Pilih kumpulan' };
+        let sulit = null;
+        if (utama(u)) {
+          const t = templatOf(fd.templat || 'pekerja');
+          profil.templat = t.id; profil.kuasa = Object.assign({}, t.kuasa);
+          profil.skopKumpulan = t.skop === 'semua' ? ['semua'] : t.skop === 'sendiri' ? [profil.kumpulanId] : [];
+          profil.peranan = perananDariKuasa({ staffId: profil.staffId, peranan: 'pekerja' }, profil.kuasa);
+          const s = ambilSulit(fd); if (Object.keys(s).length) sulit = s;
+        }
+        const r = await akaun().daftar(profil, sulit);
+        state.hasilPin = Object.assign({ baru: true, nama: profil.nama, telefon: profil.telefon }, r);
+        logP('Daftar pekerja', `${r.staffId} ${profil.nama}`, null, { jawatan: profil.jawatan, kumpulan: kumpulanNama(profil.kumpulanId), templat: profil.templat });
+        location.hash = '#a-pekerja-p-' + r.profilId; render(); window.scrollTo(0, 0);
+      } catch (e) { btn.disabled = false; btn.textContent = 'Daftar & jana PIN'; toast(e.code === 'kaiser/kumpulan' ? e.message : authMsg(e)); }
+    },
+    async profilPekerja(fd, form) {
+      const p = db.users.find((x) => x.id === form.dataset.id);
+      const c = ambilProfil(fd);
+      const lama = Object.fromEntries(Object.keys(c).map((k) => [k, p[k] == null ? '' : p[k]]));
+      try {
+        if (CLOUD) await fs.collection('users').doc(p.id).update(clean(c)); else { Object.assign(p, c); Store.save(db); }
+        logP('Ubah maklumat pekerja', `${p.staffId || p.email} ${p.nama}`, lama, c);
+        toast('Disimpan');
+      } catch (e) { toast(authMsg(e)); }
+    },
+    async kuasaPekerja(fd, form) {
+      const p = db.users.find((x) => x.id === form.dataset.id);
+      const kuasa = {}; SEMUA_KUASA.forEach((x) => { if (fd['k_' + x.k]) kuasa[x.k] = true; });
+      const skop = fd.sk_semua ? ['semua'] : kumpulanList().filter((k) => fd['sk_' + k.id]).map((k) => k.id);
+      if (Object.keys(kuasa).length && !skop.length) { toast('Pilih sekurang-kurangnya satu kumpulan dalam skop'); return; }
+      const c = { templat: fd.templat || p.templat || 'pekerja', kuasa, skopKumpulan: Object.keys(kuasa).length ? skop : [], peranan: perananDariKuasa(p, kuasa) };
+      const lama = { templat: p.templat || '', kuasa: p.kuasa || {}, skopKumpulan: p.skopKumpulan || [] };
+      try {
+        if (CLOUD) await fs.collection('users').doc(p.id).update(clean(c)); else { Object.assign(p, c); Store.save(db); }
+        logP('Ubah kuasa', `${p.staffId || p.email} ${p.nama}`, lama, c);
+        toast('Kuasa disimpan'); render();
+      } catch (e) { toast(authMsg(e)); }
+    },
+    async sulitPekerja(fd, form) {
+      const id = form.dataset.id; const s = ambilSulit(fd);
+      try {
+        if (CLOUD) await fs.collection('sulit').doc(id).set(s);
+        else { db.sulit = (db.sulit || []).filter((x) => x.id !== id).concat([Object.assign({ id }, s)]); Store.save(db); }
+        logP('Ubah gaji/IC/bank', userName(id));
+        toast('Disimpan');
+      } catch (e) { toast(authMsg(e)); }
+    },
+    async kumpulan(fd, form) {
+      const k = (db.kumpulan || []).find((x) => x.id === form.dataset.id);
+      const c = { nama: fd.nama.trim(), penyelia: fd.penyelia ? [fd.penyelia] : [], pengurus: fd.pengurus ? [fd.pengurus] : [] };
+      try { if (CLOUD) await fs.collection('kumpulan').doc(k.id).update(c); else { Object.assign(k, c); Store.save(db); } logP('Ubah kumpulan', c.nama); toast('Kumpulan disimpan'); } catch (e) { toast(authMsg(e)); }
+    },
+    async kumpulanBaru(fd) {
+      const k = { id: 'G' + uid(), nama: fd.nama.trim(), penyelia: [], pengurus: [], aktif: true };
+      try { if (CLOUD) await fs.collection('kumpulan').doc(k.id).set(clean(Object.assign({}, k, { id: undefined }))); else { (db.kumpulan = db.kumpulan || []).push(k); Store.save(db); } logP('Tambah kumpulan', k.nama); toast('Kumpulan ditambah'); render(); } catch (e) { toast(authMsg(e)); }
+    },
+    async jawatanBaru(fd) {
+      const j = jawatanList().concat([fd.nama.trim()]).filter((v, i, a) => v && a.indexOf(v) === i);
+      try { await simpanSettings({ jawatan: j }); render(); } catch (e) { toast(authMsg(e)); }
+    },
+    async pinPertama(fd, form) {
+      if (fd.pinBaru !== fd.pinBaru2) { toast('PIN tidak sepadan'); return; }
+      if (/^(\d)\1{5}$/.test(fd.pinBaru) || ['123456', '654321', '012345', '123123'].includes(fd.pinBaru)) { toast('PIN terlalu mudah. Pilih nombor lain.'); return; }
+      const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Menyimpan…';
+      try {
+        const cu = auth.currentUser; const pt = state.pertama;
+        const dev = perantiId();
+        const devDoc = await fs.collection('peranti').doc(dev).get();
+        if (devDoc.exists && devDoc.data().profil !== pt.profil) { state.screen = 'perantiMilikLain'; render(); return; }
+        await cu.updatePassword(fd.pinBaru);
+        const b = fs.batch();
+        b.update(fs.collection('akses').doc(cu.uid), { sementara: false });
+        b.update(fs.collection('users').doc(pt.profil), { akaunApps: { status: 'aktif', peranti: { id: dev, nama: namaPeranti(), masa: Date.now() }, pinDitukar: Date.now() }, pdpa: Date.now() });
+        if (!devDoc.exists) b.set(fs.collection('peranti').doc(dev), { profil: pt.profil, staffId: pt.staffId || '', masa: Date.now() });
+        await b.commit();
+        state.pertama = null; toast('PIN disimpan. Selamat bekerja!');
+        await onSignedIn(cu);
+      } catch (e) { btn.disabled = false; btn.textContent = 'Simpan PIN & mula'; toast(authMsg(e)); }
+    },
+  };
+
   // ---------- Router ----------
   function render() {
     const app = $('#app');
@@ -1280,7 +1839,8 @@
     if (parts[0] === 'a') {
       if (!isAdmin(u)) { location.hash = '#home'; return; }
       const v = parts[1] || 'dash';
-      const map = { hadir: viewAHadir, mohon: viewAMohon, dash: viewDash, semak: viewSemak, skop: () => (parts[2] ? viewSkop(parts[2]) : viewSkopList()), vo: viewVOList, kod: viewKod, tunai: viewTunai, eksport: viewEksport, tetapan: () => (u.peranan === 'pengarah' ? viewTetapan() : viewDash()) };
+      const map = { hadir: viewAHadir, mohon: viewAMohon, dash: viewDash, semak: viewSemak, skop: () => (parts[2] ? viewSkop(parts[2]) : viewSkopList()), vo: viewVOList, kod: viewKod, tunai: viewTunai, eksport: viewEksport, tetapan: () => (utama(u) ? viewTetapan() : viewDash()),
+        pekerja: () => ({ daftar: viewPekerjaDaftar, gaji: viewPekerjaGaji, jawatan: viewPekerjaJawatan, p: () => viewPekerjaProfil(parts[3]) }[parts[2]] || viewPekerjaSenarai)() };
       app.innerHTML = (map[v] || viewDash)();
     } else {
       const v = (parts[0] && parts[0] !== 'mula') ? parts[0] : (isAdmin(u) ? 'admin' : 'home');
@@ -1320,6 +1880,7 @@
     logout() { state.draft = null; location.hash = '#mula'; if (CLOUD) { Cloud.stop(); auth.signOut(); return; } state.userId = null; Store.setUser(null); render(); },
     resetPw() { const em = ($('input[name=email]') || {}).value; if (!em) { toast('Isi emel dahulu'); return; } auth.sendPasswordResetEmail(em.trim()).then(() => toast('Emel tetapan semula kata laluan dihantar')).catch((e) => toast(authMsg(e))); },
     ...STAF_ACTIONS,
+    ...PK_ACTIONS,
     rmPhoto(el) { state.draft[el.dataset.f].splice(Number(el.dataset.i), 1); refreshPhotos(el.dataset.f); },
     setBayaran(el) { state.draft.bayaran = el.dataset.v; rerenderKeepForm(); },
     setSkop(el) { state.draft.skop = el.dataset.v; rerenderKeepForm(); },
@@ -1373,6 +1934,7 @@
 
   const FORMS = {
     ...STAF_FORMS,
+    ...PK_FORMS,
     laporan(fd, form) {
       const id = state.draft._id;
       const data = { tarikh: fd.tarikh, kodId: fd.kodId, lokasi: fd.lokasi.trim(), tugas: fd.tugas.trim(), pekerja: fd.pekerja.trim(), jam: num(fd.jam), bahan: fd.bahan.trim(), gambar: persistPhotos(state.draft.gambar) };
@@ -1429,9 +1991,9 @@
     kiraan(fd) { const jangka = bakiTunai().baki; const kr = { id: uid(), tarikh: today(), jumlah: num(fd.jumlah), jangka, oleh: state.userId }; db.kiraan.push(kr); commit('kiraan tunai', '', [['kiraan', kr]]); const v = num(fd.jumlah) - jangka; toast(Math.abs(v) < 0.005 ? 'Kiraan sepadan' : `Varians ${rm(v)}: perlu dijelaskan`); render(); },
     settings(fd) { Object.assign(db.settings, { klien: fd.klien, prefix: fd.prefix, hadTunai: num(fd.hadTunai), imprest: num(fd.imprest), waktuMasuk: fd.waktuMasuk || '08:00', kadarKm: num(fd.kadarKm), hadPendahuluan: num(fd.hadPendahuluan), hariJelasPetty: num(fd.hariJelasPetty) || 7, tapakLat: (fd.tapakLat || '').trim(), tapakLng: (fd.tapakLng || '').trim(), radius: num(fd.radius) || 500 }); commit('tetapan', '', [['settings', Object.assign({ id: 'main' }, db.settings)]]); toast('Tetapan disimpan'); render(); },
     user(fd, form) {
-      if (!CLOUD) { db.users.push({ id: uid(), nama: fd.nama.trim(), peranan: fd.peranan, tarikhMula: fd.tarikhMula || '' }); commit('tambah pengguna', fd.nama); toast('Pengguna ditambah'); render(); return; }
+      if (!CLOUD) { db.users.push({ id: uid(), nama: fd.nama.trim(), peranan: fd.peranan, pengarahUtama: fd.peranan === 'pengarah', tarikhMula: fd.tarikhMula || '' }); commit('tambah pengguna', fd.nama); toast('Pengguna ditambah'); render(); return; }
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Mendaftar…';
-      const field = ['pekerja', 'penyelia'].includes(fd.peranan);
+      const field = false;
       if (field && (!normId(fd.staffId) || !/^[0-9]{6}$/.test(fd.pin || ''))) { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast('Pekerja / Penyelia perlukan ID pekerja dan PIN 6 digit'); return; }
       if (!field && (!fd.email || (fd.password || '').length < 6)) { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast('Pengurusan perlukan emel dan kata laluan (sekurang-kurangnya 6 aksara)'); return; }
       (field ? createPinUser(fd) : createCloudUser(fd)).then(() => { toast(field ? `${fd.nama} didaftarkan. ID ${normId(fd.staffId)}, PIN seperti ditetapkan.` : `${fd.nama} didaftarkan. Beri emel dan kata laluan sementara kepadanya.`); render(); })
@@ -1443,14 +2005,22 @@
     },
     bootstrap(fd) { bootstrapSystem(fd.nama.trim()); },
     async loginPin(fd, form) {
+      const c = cubaan();
+      if (c.sehingga && c.sehingga > Date.now()) { toast(`Terlalu banyak PIN salah. Cuba lagi selepas ${Math.ceil((c.sehingga - Date.now()) / 60000)} minit.`); return; }
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Masuk…';
+      const salah = () => {
+        const n = (cubaan().n || 0) + 1;
+        if (n >= 5) { setCubaan({ n: 0, sehingga: Date.now() + 15 * 60000 }); return 'PIN salah 5 kali. Log masuk dikunci 15 minit di telefon ini.'; }
+        setCubaan({ n }); return `ID atau PIN salah (${n}/5)`;
+      };
       const fail = (m) => { btn.disabled = false; btn.textContent = 'Log masuk'; toast(m); };
       try {
         const id = normId(fd.staffId);
         const map = await fs.collection('idmap').doc(id).get();
-        if (!map.exists) { fail('ID atau PIN salah'); return; }
+        if (!map.exists || !map.data().email) { fail(salah()); return; }
         await auth.signInWithEmailAndPassword(map.data().email, fd.pin);
-      } catch (e) { fail(e && e.code === 'auth/invalid-credential' ? 'ID atau PIN salah' : authMsg(e)); }
+        setCubaan({});
+      } catch (e) { fail(e && ['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found'].includes(e.code) ? salah() : authMsg(e)); }
     },
     async resetPin(fd, form) {
       const u = db.users.find((x) => x.id === form.dataset.id);
@@ -1569,7 +2139,7 @@
     const sa = sec.auth();
     await sa.setPersistence(firebase.auth.Auth.Persistence.NONE);
     const cred = await sa.createUserWithEmailAndPassword(fd.email.trim(), fd.password);
-    const u = { id: cred.user.uid, nama: fd.nama.trim(), peranan: fd.peranan, email: fd.email.trim().toLowerCase(), aktif: true, tarikhMula: fd.tarikhMula || '' };
+    const u = { id: cred.user.uid, nama: fd.nama.trim(), peranan: fd.peranan, email: fd.email.trim().toLowerCase(), aktif: true, tarikhMula: fd.tarikhMula || '', pengarahUtama: fd.peranan === 'pengarah', kumpulanId: (kumpulanList()[0] || {}).id || '' };
     await sa.signOut();
     await fs.collection('users').doc(u.id).set(clean(Object.assign({}, u, { id: undefined })));
     commit('tambah pengguna', u.email);
@@ -1633,13 +2203,27 @@
     state.authUser = user;
     try {
       // Akaun PIN dipetakan kepada profil pekerja yang tetap (supaya rekod kekal bila PIN diset semula).
-      let pid = user.uid;
-      try { const ak = await fs.collection('akses').doc(user.uid).get(); if (ak.exists) pid = ak.data().profil; } catch (e) { /* tiada pemetaan */ }
+      let pid = user.uid, ak = null;
+      try { const a = await fs.collection('akses').doc(user.uid).get(); if (a.exists) { ak = a.data(); pid = ak.profil; } } catch (e) { /* tiada pemetaan */ }
+      // PIN sementara: tamat selepas 7 hari, atau wajib ditukar (log masuk pertama).
+      if (ak && ak.sementara) {
+        if ((ak.tamatMs || 0) < Date.now()) { state.userId = null; state.screen = 'tamat'; render(); return; }
+        if (APP === 'pekerja') {
+          let nama = '';
+          try { const s0 = await fs.collection('users').doc(pid).get(); if (s0.exists) nama = s0.data().nama; } catch (e) { /* abaikan */ }
+          state.userId = null; state.pertama = { profil: pid, staffId: ak.staffId, nama }; state.screen = 'pertama'; render(); return;
+        }
+      }
       const snap = await fs.collection('users').doc(pid).get();
       if (snap.exists && snap.data().aktif !== false) {
         const prof = Object.assign({ id: pid }, snap.data());
         if ((APP === 'pekerja' && !isField(prof)) || (APP === 'urus' && !isAdmin(prof))) {
           db.users = [prof]; state.userId = null; state.screen = 'wrongapp'; render(); return;
+        }
+        // Apps Pekerja: satu telefon untuk satu pekerja.
+        if (APP === 'pekerja') {
+          const sekat = await semakPeranti(prof);
+          if (sekat) { state.userId = null; state.screen = sekat; render(); return; }
         }
         db.users = [prof].concat(db.users.filter((x) => x.id !== pid));
         state.userId = pid; state.screen = null;
