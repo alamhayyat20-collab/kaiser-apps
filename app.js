@@ -116,10 +116,11 @@
   const imgCache = {};
   const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
   if (CLOUD) {
-    firebase.initializeApp(CFG);
-    fs = firebase.firestore();
+    // Setiap apps ada sesi log masuk sendiri: log masuk di Apps Pengurusan tidak terbawa ke Apps Pekerja, dan sebaliknya.
+    const fbApp = APP === 'pekerja' ? firebase.initializeApp(CFG, 'kaiser-pekerja') : firebase.initializeApp(CFG);
+    fs = fbApp.firestore();
     try { fs.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (e) { /* abaikan */ }
-    auth = firebase.auth();
+    auth = fbApp.auth();
   }
   const clean = (o) => JSON.parse(JSON.stringify(o));
   const Cloud = {

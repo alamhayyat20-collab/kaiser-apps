@@ -1,5 +1,5 @@
 // Service worker: simpan fail apps supaya boleh dibuka tanpa internet.
-const CACHE = 'kaiser-v4';
+const CACHE = 'kaiser-v5';
 const FILES = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon-192.png', './icon-512.png', './icon-64.png', './firebase-config.js'];
 
 self.addEventListener('install', (e) => {

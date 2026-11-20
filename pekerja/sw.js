@@ -1,5 +1,5 @@
 // Service worker Apps Pekerja: simpan fail apps supaya boleh dibuka tanpa internet.
-const CACHE = 'kaiser-pekerja-v1';
+const CACHE = 'kaiser-pekerja-v2';
 const FILES = ['./', './index.html', './manifest.json', '../app.js', '../styles.css', '../firebase-config.js', '../icon-64.png', '../icon-192.png', '../icon-512.png'];
 
 self.addEventListener('install', (e) => {
