@@ -4,14 +4,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    // Akaun PIN pekerja dipetakan kepada profil tetap melalui koleksi `akses`.
+    function aksesPath() { return /databases/$(database)/documents/akses/$(request.auth.uid); }
+    function pid() { return exists(aksesPath()) ? get(aksesPath()).data.profil : request.auth.uid; }
+    function userPath() { return /databases/$(database)/documents/users/$(pid()); }
     function prof() { return get(userPath()).data; }
     function active() { return signedIn() && exists(userPath()) && prof().get('aktif', true) != false; }
     function role() { return prof().peranan; }
     function isPengarah() { return active() && role() == 'pengarah'; }
     function isPengurus() { return active() && role() in ['pengurus', 'pengarah']; }
     function isAdmin() { return active() && role() in ['pengurus', 'pengarah', 'akaun']; }
-    function own(d) { return d.userId == request.auth.uid; }
+    function own(d) { return d.userId == pid(); }
     function bootstrapped() { return exists(/databases/$(database)/documents/meta/bootstrap); }
 
     // Pengguna pertama yang log masuk menjadi Pengarah (sekali sahaja).
@@ -22,12 +25,24 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if active() || (signedIn() && request.auth.uid == uid);
+      allow read: if active() || (signedIn() && pid() == uid);
       allow create: if isPengarah()
         || (signedIn() && request.auth.uid == uid && !bootstrapped()
             && existsAfter(/databases/$(database)/documents/meta/bootstrap)
             && request.resource.data.peranan == 'pengarah');
       allow update: if isPengarah();
+    }
+
+    // Pemetaan akaun log masuk PIN → profil pekerja. Hanya Pengarah boleh menulis.
+    match /akses/{authUid} {
+      allow get: if signedIn() && (request.auth.uid == authUid || isPengarah());
+      allow create, update, delete: if isPengarah();
+    }
+
+    // ID pekerja → emel log masuk dalaman. Dibaca sebelum log masuk (tiada data peribadi).
+    match /idmap/{staffId} {
+      allow get: if true;
+      allow create, update: if isPengarah();
     }
 
     match /settings/{doc} {
@@ -68,7 +83,7 @@ service cloud.firestore {
     match /mohon/{id} {
       allow read: if isAdmin() || (active() && own(resource.data));
       allow create: if active() && own(request.resource.data) && request.resource.data.status == 'dihantar';
-      allow update: if (isAdmin() && resource.data.userId != request.auth.uid)
+      allow update: if (isAdmin() && resource.data.userId != pid())
         || (active() && own(resource.data) && own(request.resource.data)
             && resource.data.status == 'dihantar' && request.resource.data.status == 'dibatalkan');
     }
@@ -83,8 +98,8 @@ service cloud.firestore {
 
     // Gambar disimpan sebagai dokumen berasingan (pelan Spark, tanpa Cloud Storage).
     match /gambar/{id} {
-      allow read: if isAdmin() || (active() && resource.data.ownerId == request.auth.uid);
-      allow create: if active() && request.resource.data.ownerId == request.auth.uid
+      allow read: if isAdmin() || (active() && resource.data.ownerId == pid());
+      allow create: if active() && request.resource.data.ownerId == pid()
         && request.resource.data.data is string && request.resource.data.data.size() < 1000000;
     }
   }

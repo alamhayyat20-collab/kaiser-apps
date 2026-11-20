@@ -20,6 +20,12 @@
   const PERANAN = { pekerja: 'Pekerja', penyelia: 'Penyelia', pengurus: 'Pengurus', pengarah: 'Pengarah', akaun: 'Akaun' };
   const STATUS_LABEL = { dihantar: 'Dihantar', disahkan: 'Disahkan', diluluskan: 'Diluluskan', dikembalikan: 'Dikembalikan', ditolak: 'Ditolak', dibatalkan: 'Dibatalkan', dibayar: 'Dibayar', dijelaskan: 'Dijelaskan' };
   const DB_KEY = 'kaiser_app_v1';
+  // Dua apps, satu kod: 'pekerja' (telefon pekerja, log masuk ID + PIN) atau 'urus' (pengurusan & akaun, log masuk emel).
+  const APP = window.KAISER_APP === 'pekerja' ? 'pekerja' : 'urus';
+  const BASE = window.KAISER_BASE || '';
+  const PIN_DOMAIN = 'pekerja.kaiser-apps.app';
+  const pinEmail = (id, ver) => `${String(id).trim().toLowerCase().replace(/[^a-z0-9]/g, '')}.v${ver || 1}@${PIN_DOMAIN}`;
+  const normId = (id) => String(id || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const USER_KEY = 'kaiser_app_user';
 
   // ---------- Utiliti ----------
@@ -303,25 +309,34 @@
   // ---------- Paparan: log masuk ----------
   function viewLogin() {
     if (CLOUD) return viewCloudLogin();
-    const order = ['penyelia', 'pengurus', 'pengarah', 'akaun'];
-    const users = db.users.slice().sort((a, b) => order.indexOf(a.peranan) - order.indexOf(b.peranan));
+    const order = ['pekerja', 'penyelia', 'pengurus', 'pengarah', 'akaun'];
+    const users = db.users.filter((u) => (APP === 'pekerja' ? isField(u) : isAdmin(u))).sort((a, b) => order.indexOf(a.peranan) - order.indexOf(b.peranan));
     return `<div class="login">
-      <div class="logo"><img src="icon-192.png" alt="Logo Kaiser"><div><h1>Kaiser Engineering</h1><div class="muted small">Rekod kerja, perbelanjaan dan tuntutan</div></div></div>
+      <div class="logo"><img src="${BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>
       <div class="notice">Mod demo: data disimpan dalam pelayar ini sahaja. Pilih pengguna untuk masuk.</div>
       <div class="stack">${users.map((u) => `<button class="user" data-a="login" data-id="${u.id}"><span><b>${esc(u.nama)}</b><br><span class="muted small">${PERANAN[u.peranan]}</span></span><span aria-hidden="true">›</span></button>`).join('')}</div>
     </div>`;
   }
 
   function loginShell(inner) {
-    return `<div class="login"><div class="logo"><img src="icon-192.png" alt="Logo Kaiser"><div><h1>Kaiser Engineering</h1><div class="muted small">Rekod kerja, perbelanjaan dan tuntutan</div></div></div>${inner}</div>`;
+    return `<div class="login"><div class="logo"><img src="${BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>${inner}${installHint()}</div>`;
   }
   function viewCloudLogin() {
     if (state.screen === 'loading') return loginShell('<div class="muted">Memuatkan…</div>');
+    if (state.screen === 'wrongapp') return loginShell(wrongAppMsg());
+    if (state.screen === 'bootstrap' && APP === 'pekerja') return loginShell('<div class="notice bad">Sistem belum disediakan. Pengarah perlu log masuk ke Apps Pengurusan dahulu.</div><button class="btn" data-a="logout">Log keluar</button>');
     if (state.screen === 'bootstrap') return loginShell(`<div class="card stack"><h2>Sediakan sistem</h2>
       <div class="small">Anda pengguna pertama (${esc(state.authUser.email)}). Akaun ini akan didaftarkan sebagai <b>Pengarah</b>, dan anda boleh menambah pengguna lain dalam Tetapan.</div>
       <form class="stack" data-form="bootstrap"><label class="f">Nama penuh<input class="i" name="nama" required></label><button class="btn primary" type="submit">Sediakan sistem</button></form>
       <button class="btn" data-a="logout">Log keluar</button></div>`);
-    if (state.screen === 'notreg') return loginShell(`<div class="notice bad">Akaun <b>${esc(state.authUser.email)}</b> belum didaftarkan atau telah dinyahaktifkan. Hubungi Pengarah Kaiser.</div><button class="btn" data-a="logout">Log keluar</button>`);
+    if (state.screen === 'notreg') return loginShell(`<div class="notice bad">Akaun <b>${esc(APP === 'pekerja' ? 'ini' : state.authUser.email)}</b> belum didaftarkan atau telah dinyahaktifkan. Hubungi Pengarah Kaiser.</div><button class="btn" data-a="logout">Log keluar</button>`);
+    if (APP === 'pekerja') return loginShell(`${navigator.onLine ? '' : '<div class="notice">Tiada internet. Log masuk pertama kali memerlukan internet.</div>'}
+      <form class="card stack" data-form="loginPin">
+        <label class="f">ID pekerja<input class="i" name="staffId" autocomplete="username" autocapitalize="characters" placeholder="Contoh: K001" required style="text-transform:uppercase"></label>
+        <label class="f">PIN (6 digit)<input class="i" type="password" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="current-password" required></label>
+        <button class="btn primary" type="submit">Log masuk</button>
+        <div class="muted tiny">Lupa PIN? Hubungi pengurus atau Pengarah untuk set semula.</div>
+      </form>`);
     return loginShell(`${navigator.onLine ? '' : '<div class="notice">Tiada internet. Log masuk pertama kali memerlukan internet.</div>'}
       <form class="card stack" data-form="login">
         <label class="f">Emel<input class="i" type="email" name="email" autocomplete="username" required></label>
@@ -335,10 +350,10 @@
   function topbar(title, back) {
     const u = me();
     return `<header class="topbar">
-      ${back ? `<a class="iconbtn" href="${back}" aria-label="Kembali">‹</a>` : '<img src="icon-64.png" alt="">'}
+      ${back ? `<a class="iconbtn" href="${back}" aria-label="Kembali">‹</a>` : `<img src="${BASE}icon-64.png" alt="">`}
       <div><div class="t">${esc(title)}</div><div class="s">${esc(u.nama)} · ${PERANAN[u.peranan]}</div></div>
       <span class="sp"></span>
-      ${isAdmin(u) ? '<a class="iconbtn" href="#a-dash">Pentadbiran</a>' : ''}
+      ${CLOUD && u.staffId ? '<a class="iconbtn" href="#pin">PIN</a>' : ''}
       <button class="iconbtn" data-a="logout">Keluar</button>
     </header>`;
   }
@@ -509,7 +524,7 @@
     const link = (r, label, extra) => `<a href="#a-${r}" class="${active === r ? 'on' : ''}">${label}${extra || ''}</a>`;
     return `<div class="admin">
       <nav class="side" aria-label="Menu pentadbiran">
-        <div class="brand"><img src="icon-64.png" alt=""><div><b>Kaiser</b><div class="tiny" style="color:#BFD0E0">${esc(u.nama)} · ${PERANAN[u.peranan]}</div></div></div>
+        <div class="brand"><img src="${BASE}icon-64.png" alt=""><div><b>Kaiser</b><div class="tiny" style="color:#BFD0E0">${esc(u.nama)} · ${PERANAN[u.peranan]}</div></div></div>
         ${link('dash', 'Utama')}
         ${u.peranan !== 'akaun' ? link('semak', 'Peti semakan', q ? `<span class="badge">${q}</span>` : '') : ''}
         ${link('hadir', 'Kehadiran')}
@@ -520,7 +535,7 @@
         ${link('tunai', 'Tunai runcit')}
         ${link('eksport', 'Eksport bulanan')}
         ${u.peranan === 'pengarah' ? link('tetapan', 'Tetapan &amp; pengguna') : ''}
-        <a href="#home">Apps Pekerja</a>
+        <a href="${BASE}pekerja/" target="_blank" rel="noopener">Buka Apps Pekerja ↗</a>
         <a href="#" data-a="logout">Log keluar</a>
       </nav>
       <main class="main">${body}</main>
@@ -714,11 +729,13 @@
         <div><button class="btn primary" type="submit">Simpan tetapan</button></div>
       </form>
       <section class="card stack"><h2>Pengguna</h2>
-        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th>Mula kerja</th><th class="n">Hak cuti tahunan / sakit</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false).map((u) => `<tr><td>${esc(u.nama)}${u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${PERANAN[u.peranan]}</td><td>${u.tarikhMula ? fmtDate(u.tarikhMula) : '—'}</td><td class="n">${hakCuti(u).Tahunan} / ${hakCuti(u).Sakit} hari</td><td>${u.id !== state.userId ? `<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Buang</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th>Mula kerja</th><th class="n">Hak cuti tahunan / sakit</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false).map((u) => `<tr><td>${esc(u.nama)}${u.staffId ? `<br><span class="muted tiny">ID ${esc(u.staffId)} · log masuk dengan PIN</span>` : u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${PERANAN[u.peranan]}</td><td>${u.tarikhMula ? fmtDate(u.tarikhMula) : '—'}</td><td class="n">${hakCuti(u).Tahunan} / ${hakCuti(u).Sakit} hari</td><td>${u.id !== state.userId ? `${CLOUD && u.staffId ? `<button class="btn sm" data-a="resetPin" data-id="${u.id}">Set semula PIN</button> ` : ''}<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Buang</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
         <form class="row" data-form="user" style="align-items:flex-end">
           <label class="f" style="flex:1 1 200px">Nama<input class="i" name="nama" required></label>
-          ${CLOUD ? `<label class="f" style="flex:1 1 220px">Emel<input class="i" type="email" name="email" required></label>
-          <label class="f" style="flex:1 1 180px">Kata laluan sementara<input class="i" name="password" minlength="6" required></label>` : ''}
+          ${CLOUD ? `<label class="f" style="flex:1 1 140px">ID pekerja <span class="muted tiny" style="font-weight:400">(Pekerja / Penyelia)</span><input class="i" name="staffId" placeholder="K001" style="text-transform:uppercase"></label>
+          <label class="f" style="flex:1 1 120px">PIN 6 digit<input class="i" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"></label>
+          <label class="f" style="flex:1 1 220px">Emel <span class="muted tiny" style="font-weight:400">(Pengurus / Pengarah / Akaun)</span><input class="i" type="email" name="email"></label>
+          <label class="f" style="flex:1 1 160px">Kata laluan sementara<input class="i" name="password" minlength="6"></label>` : ''}
           <label class="f" style="flex:1 1 160px">Tarikh mula kerja<input class="i" type="date" name="tarikhMula"></label>
           <label class="f" style="flex:1 1 160px">Peranan<select class="i" name="peranan">${Object.keys(PERANAN).map((p) => `<option value="${p}">${PERANAN[p]}</option>`).join('')}</select></label>
           <button class="btn primary" type="submit">Tambah pengguna</button>
@@ -1226,6 +1243,28 @@
   }
   function closeModal() { const m = $('#modal'); if (m) m.remove(); }
 
+  // ---------- Pasang apps, apps salah, tukar PIN ----------
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installEvt = e; scheduleRender(); });
+  function installHint() {
+    const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    if (standalone) return '';
+    if (state.installEvt) return `<button class="btn accent block" data-a="pasang">Pasang ${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'} di telefon</button>`;
+    if (/iphone|ipad/i.test(navigator.userAgent)) return '<div class="muted tiny">Untuk pasang di iPhone: tekan butang Kongsi, kemudian "Add to Home Screen".</div>';
+    return '<div class="muted tiny">Untuk pasang: buka menu pelayar ⋮ dan pilih "Install app" atau "Add to Home screen".</div>';
+  }
+  function wrongAppMsg() {
+    return APP === 'pekerja'
+      ? `<div class="notice">Akaun ini ialah akaun pengurusan. Sila gunakan <b>Apps Pengurusan</b>.</div><a class="btn primary block" href="${BASE}">Buka Apps Pengurusan</a><button class="btn block" data-a="logout">Log keluar</button>`
+      : `<div class="notice">Akaun ini ialah akaun pekerja. Sila gunakan <b>Apps Pekerja</b> dengan ID dan PIN.</div><a class="btn primary block" href="${BASE}pekerja/">Buka Apps Pekerja</a><button class="btn block" data-a="logout">Log keluar</button>`;
+  }
+  function viewPin() {
+    return `${topbar('Tukar PIN', '#home')}<main class="wrap"><form class="card stack" data-form="tukarPin">
+      <label class="f">PIN lama<input class="i" type="password" name="pinLama" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></label>
+      <label class="f">PIN baharu (6 digit)<input class="i" type="password" name="pinBaru" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></label>
+      <label class="f">Ulang PIN baharu<input class="i" type="password" name="pinBaru2" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></label>
+      <button class="btn primary" type="submit">Tukar PIN</button></form></main>`;
+  }
+
   // ---------- Router ----------
   function render() {
     const app = $('#app');
@@ -1234,6 +1273,9 @@
     const parts = hash.split('-').filter(Boolean);
     if (!u) { app.innerHTML = viewLogin(); return; }
     if (CLOUD && u.aktif === false) { app.innerHTML = viewLogin(); return; }
+    if ((APP === 'pekerja' && !isField(u)) || (APP === 'urus' && !isAdmin(u))) { app.innerHTML = loginShell(wrongAppMsg()); return; }
+    if (APP === 'pekerja' && parts[0] === 'a') { location.hash = '#home'; return; }
+    if (APP === 'urus' && parts[0] !== 'a') { location.hash = '#a-dash'; return; }
     if (parts[0] === 'a') {
       if (!isAdmin(u)) { location.hash = '#home'; return; }
       const v = parts[1] || 'dash';
@@ -1243,7 +1285,7 @@
       const v = (parts[0] && parts[0] !== 'mula') ? parts[0] : (isAdmin(u) ? 'admin' : 'home');
       if (v === 'admin') { location.hash = '#a-dash'; return; }
       if (!['laporan', 'belian', 'vo', 'hadir', 'mohon'].includes(v)) state.draft = null;
-      const map = { home: viewHome, laporan: () => viewLaporan(parts[1]), belian: () => viewBelian(parts[1]), vo: viewVO, rekod: viewRekod, hadir: viewHadir, mohon: () => viewMohon(parts[1]), permohonan: viewPermohonanSaya };
+      const map = { pin: viewPin, home: viewHome, laporan: () => viewLaporan(parts[1]), belian: () => viewBelian(parts[1]), vo: viewVO, rekod: viewRekod, hadir: viewHadir, mohon: () => viewMohon(parts[1]), permohonan: viewPermohonanSaya };
       app.innerHTML = (map[v] || viewHome)();
     }
     if (state.lastHash !== hash) window.scrollTo(0, 0);
@@ -1268,7 +1310,12 @@
 
   // ---------- Tindakan ----------
   const A = {
-    login(el) { state.userId = el.dataset.id; Store.setUser(state.userId); const u = me(); location.hash = isAdmin(u) ? '#a-dash' : '#home'; render(); },
+    login(el) { state.userId = el.dataset.id; Store.setUser(state.userId); location.hash = APP === 'urus' ? '#a-dash' : '#home'; render(); },
+    pasang() { if (state.installEvt) { state.installEvt.prompt(); state.installEvt.userChoice.finally(() => { state.installEvt = null; render(); }); } },
+    resetPin(el) {
+      const u = db.users.find((x) => x.id === el.dataset.id);
+      el.closest('td').innerHTML = `<form class="row" data-form="resetPin" data-id="${u.id}" style="gap:6px"><input class="i" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="PIN baharu" required style="max-width:130px"><button class="btn sm primary" type="submit">Simpan</button></form>`;
+    },
     logout() { state.draft = null; location.hash = '#mula'; if (CLOUD) { Cloud.stop(); auth.signOut(); return; } state.userId = null; Store.setUser(null); render(); },
     resetPw() { const em = ($('input[name=email]') || {}).value; if (!em) { toast('Isi emel dahulu'); return; } auth.sendPasswordResetEmail(em.trim()).then(() => toast('Emel tetapan semula kata laluan dihantar')).catch((e) => toast(authMsg(e))); },
     ...STAF_ACTIONS,
@@ -1383,7 +1430,10 @@
     user(fd, form) {
       if (!CLOUD) { db.users.push({ id: uid(), nama: fd.nama.trim(), peranan: fd.peranan, tarikhMula: fd.tarikhMula || '' }); commit('tambah pengguna', fd.nama); toast('Pengguna ditambah'); render(); return; }
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Mendaftar…';
-      createCloudUser(fd).then(() => { toast(`${fd.nama} didaftarkan. Beri emel dan kata laluan sementara kepadanya.`); render(); })
+      const field = ['pekerja', 'penyelia'].includes(fd.peranan);
+      if (field && (!normId(fd.staffId) || !/^[0-9]{6}$/.test(fd.pin || ''))) { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast('Pekerja / Penyelia perlukan ID pekerja dan PIN 6 digit'); return; }
+      if (!field && (!fd.email || (fd.password || '').length < 6)) { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast('Pengurusan perlukan emel dan kata laluan (sekurang-kurangnya 6 aksara)'); return; }
+      (field ? createPinUser(fd) : createCloudUser(fd)).then(() => { toast(field ? `${fd.nama} didaftarkan. ID ${normId(fd.staffId)}, PIN seperti ditetapkan.` : `${fd.nama} didaftarkan. Beri emel dan kata laluan sementara kepadanya.`); render(); })
         .catch((e) => { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast(authMsg(e)); });
     },
     login(fd, form) {
@@ -1391,6 +1441,30 @@
       auth.signInWithEmailAndPassword(fd.email.trim(), fd.password).catch((e) => { btn.disabled = false; btn.textContent = 'Log masuk'; toast(authMsg(e)); });
     },
     bootstrap(fd) { bootstrapSystem(fd.nama.trim()); },
+    async loginPin(fd, form) {
+      const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Masuk…';
+      const fail = (m) => { btn.disabled = false; btn.textContent = 'Log masuk'; toast(m); };
+      try {
+        const id = normId(fd.staffId);
+        const map = await fs.collection('idmap').doc(id).get();
+        if (!map.exists) { fail('ID atau PIN salah'); return; }
+        await auth.signInWithEmailAndPassword(map.data().email, fd.pin);
+      } catch (e) { fail(e && e.code === 'auth/invalid-credential' ? 'ID atau PIN salah' : authMsg(e)); }
+    },
+    async resetPin(fd, form) {
+      const u = db.users.find((x) => x.id === form.dataset.id);
+      try { await resetPinUser(u, fd.pin); toast(`PIN ${u.nama} telah ditukar`); render(); } catch (e) { toast(authMsg(e)); }
+    },
+    async tukarPin(fd, form) {
+      if (fd.pinBaru !== fd.pinBaru2) { toast('PIN baharu tidak sepadan'); return; }
+      const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
+      try {
+        const cu = auth.currentUser;
+        await cu.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(cu.email, fd.pinLama));
+        await cu.updatePassword(fd.pinBaru);
+        toast('PIN ditukar'); location.hash = '#home';
+      } catch (e) { btn.disabled = false; toast(e && e.code === 'auth/invalid-credential' ? 'PIN lama salah' : authMsg(e)); }
+    },
   };
 
   // ---------- CSV ----------
@@ -1484,7 +1558,7 @@
   const AUTH_MSG = {
     'auth/invalid-credential': 'Emel atau kata laluan salah', 'auth/wrong-password': 'Emel atau kata laluan salah', 'auth/user-not-found': 'Emel atau kata laluan salah',
     'auth/invalid-email': 'Format emel tidak sah', 'auth/too-many-requests': 'Terlalu banyak cubaan. Cuba sebentar lagi.', 'auth/network-request-failed': 'Tiada sambungan internet',
-    'auth/email-already-in-use': 'Emel ini sudah didaftarkan', 'auth/weak-password': 'Kata laluan terlalu lemah (sekurang-kurangnya 6 aksara)', 'auth/operation-not-allowed': 'Log masuk emel belum dihidupkan dalam Firebase',
+    'auth/email-already-in-use': 'Emel / ID ini sudah didaftarkan', 'kaiser/id-wujud': 'ID pekerja ini sudah digunakan', 'kaiser/pin': 'PIN mesti 6 digit', 'auth/requires-recent-login': 'Sila log keluar dan masuk semula, kemudian cuba lagi', 'auth/weak-password': 'Kata laluan terlalu lemah (sekurang-kurangnya 6 aksara)', 'auth/operation-not-allowed': 'Log masuk emel belum dihidupkan dalam Firebase',
   };
   function authMsg(e) { return AUTH_MSG[e && e.code] || ('Ralat: ' + ((e && (e.code || e.message)) || 'tidak diketahui')); }
 
@@ -1498,6 +1572,43 @@
     await sa.signOut();
     await fs.collection('users').doc(u.id).set(clean(Object.assign({}, u, { id: undefined })));
     commit('tambah pengguna', u.email);
+  }
+
+  // Pekerja / penyelia: log masuk dengan ID + PIN. Akaun Firebase menggunakan emel dalaman yang dijana daripada ID.
+  async function createPinUser(fd) {
+    const id = normId(fd.staffId);
+    const exist = await fs.collection('idmap').doc(id).get();
+    if (exist.exists) throw { code: 'kaiser/id-wujud', message: `ID ${id} sudah digunakan` };
+    const sec = firebase.apps.find((a) => a.name === 'daftar') || firebase.initializeApp(CFG, 'daftar');
+    const sa = sec.auth();
+    await sa.setPersistence(firebase.auth.Auth.Persistence.NONE);
+    const email = pinEmail(id, 1);
+    const cred = await sa.createUserWithEmailAndPassword(email, fd.pin);
+    await sa.signOut();
+    const profil = 'P' + uid();
+    const b = fs.batch();
+    b.set(fs.collection('users').doc(profil), { nama: fd.nama.trim(), peranan: fd.peranan, staffId: id, authUid: cred.user.uid, ver: 1, aktif: true, tarikhMula: fd.tarikhMula || '' });
+    b.set(fs.collection('akses').doc(cred.user.uid), { profil, staffId: id });
+    b.set(fs.collection('idmap').doc(id), { email });
+    await b.commit();
+    commit('tambah pekerja', id);
+  }
+  // Set semula PIN: cipta akaun log masuk baharu (versi seterusnya) dan pautkan kepada profil yang sama.
+  async function resetPinUser(u, pin) {
+    if (!/^[0-9]{6}$/.test(pin || '')) throw { code: 'kaiser/pin', message: 'PIN mesti 6 digit' };
+    const ver = (num(u.ver) || 1) + 1, email = pinEmail(u.staffId, ver);
+    const sec = firebase.apps.find((a) => a.name === 'daftar') || firebase.initializeApp(CFG, 'daftar');
+    const sa = sec.auth();
+    await sa.setPersistence(firebase.auth.Auth.Persistence.NONE);
+    const cred = await sa.createUserWithEmailAndPassword(email, pin);
+    await sa.signOut();
+    const b = fs.batch();
+    b.set(fs.collection('akses').doc(cred.user.uid), { profil: u.id, staffId: u.staffId });
+    if (u.authUid) b.delete(fs.collection('akses').doc(u.authUid));
+    b.set(fs.collection('idmap').doc(u.staffId), { email });
+    b.update(fs.collection('users').doc(u.id), { authUid: cred.user.uid, ver });
+    await b.commit();
+    commit('set semula PIN', u.staffId);
   }
 
   async function bootstrapSystem(nama) {
@@ -1520,17 +1631,24 @@
   async function onSignedIn(user) {
     state.authUser = user;
     try {
-      const snap = await fs.collection('users').doc(user.uid).get();
+      // Akaun PIN dipetakan kepada profil pekerja yang tetap (supaya rekod kekal bila PIN diset semula).
+      let pid = user.uid;
+      try { const ak = await fs.collection('akses').doc(user.uid).get(); if (ak.exists) pid = ak.data().profil; } catch (e) { /* tiada pemetaan */ }
+      const snap = await fs.collection('users').doc(pid).get();
       if (snap.exists && snap.data().aktif !== false) {
-        const prof = Object.assign({ id: user.uid }, snap.data());
-        db.users = [prof].concat(db.users.filter((x) => x.id !== user.uid));
-        state.userId = user.uid; state.screen = null;
+        const prof = Object.assign({ id: pid }, snap.data());
+        if ((APP === 'pekerja' && !isField(prof)) || (APP === 'urus' && !isAdmin(prof))) {
+          db.users = [prof]; state.userId = null; state.screen = 'wrongapp'; render(); return;
+        }
+        db.users = [prof].concat(db.users.filter((x) => x.id !== pid));
+        state.userId = pid; state.screen = null;
         Cloud.subscribe(prof);
         const h = location.hash.replace(/^#/, '');
-        if (!h || h === 'mula') location.hash = prof.peranan === 'penyelia' ? '#home' : '#a-dash';
+        if (!h || h === 'mula') location.hash = APP === 'pekerja' ? '#home' : '#a-dash';
         render();
         return;
       }
+      if (APP === 'pekerja') { state.userId = null; state.screen = 'notreg'; render(); return; }
       let boot = true;
       try { boot = (await fs.collection('meta').doc('bootstrap').get()).exists; } catch (e) { boot = true; }
       state.userId = null; state.screen = boot ? 'notreg' : 'bootstrap'; render();
