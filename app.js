@@ -756,9 +756,10 @@
         <div class="small">Tukar peranan lama kepada templat kuasa, isi kumpulan pekerja dan rekod lama, dan sediakan status apps. Tiada data dipadam. ${db.settings.migrasi ? `<b>Sudah dijalankan ${esc(new Date(db.settings.migrasi.masa).toLocaleDateString('ms-MY'))}.</b> Boleh dijalankan semula dengan selamat.` : '<b>Belum dijalankan.</b>'}</div>
         <div><button class="btn" data-a="migrasi">Jalankan migrasi</button></div>
       </section>
+      ${state.hasilEmel ? kadEmel(state.hasilEmel) : ''}
       <section class="card stack"><h2>Akaun emel (Pengarah Utama &amp; pengurusan)</h2>
         <div class="muted small">Pekerja (ID + PIN) didaftarkan dalam menu <a href="#a-pekerja">Pekerja</a>. Di sini hanya akaun yang log masuk dengan emel, contohnya Datin sebagai Pengarah Utama.</div>
-        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false && !u.staffId).map((u) => `<tr><td><a href="#a-pekerja-p-${u.id}">${esc(u.nama)}</a> ${ikonKuasa(u)} <a class="btn sm" href="#a-pekerja-p-${u.id}">Ubah</a>${u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${utama(u) ? 'Pengarah Utama' : PERANAN[u.peranan]}</td><td>${u.id !== state.userId ? `<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Nyahaktif</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+        <div class="tbl"><table style="min-width:380px"><thead><tr><th>Nama</th><th>Peranan</th><th></th></tr></thead><tbody>${db.users.filter((u) => u.aktif !== false && !u.staffId).map((u) => `<tr><td><a href="#a-pekerja-p-${u.id}">${esc(u.nama)}</a> ${ikonKuasa(u)} <a class="btn sm" href="#a-pekerja-p-${u.id}">Ubah</a>${u.email ? `<br><span class="muted tiny">${esc(u.email)}</span>` : ''}</td><td>${utama(u) ? 'Pengarah Utama' : PERANAN[u.peranan]}</td><td><div class="row" style="gap:6px;flex-wrap:wrap">${u.email && u.id !== state.userId ? butangWa(mesejEmel(u.nama, u.email, ''), u.telefon) : ''}${u.id !== state.userId ? `<button class="btn sm danger" data-a="rmUser" data-id="${u.id}">Nyahaktif</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>
         <form class="row" data-form="user" style="align-items:flex-end;flex-wrap:wrap">
           <label class="f" style="flex:1 1 200px">Nama<input class="i" name="nama" required></label>
           ${CLOUD ? `<label class="f" style="flex:1 1 220px">Emel<input class="i" type="email" name="email" required></label>
@@ -1475,6 +1476,21 @@
       </div></section>`;
   }
 
+  // Mesej WhatsApp untuk akaun emel (Apps Pengurusan).
+  const linkUrus = () => { try { return new URL(BASE + 'index.html', location.href).href.replace(/#.*$/, ''); } catch (e) { return 'index.html'; } };
+  function mesejEmel(nama, email, password) {
+    return `Assalamualaikum ${nama}.\n\nAkaun Apps Pengurusan Kaiser telah disediakan.\n${linkUrus()}\n\n1. Buka link dalam Chrome (Android) atau Safari (iPhone).\n2. Log masuk:\n   Emel: ${email}\n   Kata laluan: ${password || '(diberikan secara berasingan)'}\n3. Pasang apps: menu ⋮ → Install app / Kongsi → Add to Home Screen.\n\nJangan kongsi kata laluan dengan sesiapa.`;
+  }
+  const butangWa = (msg, tel, label) => `<a class="btn sm accent" target="_blank" rel="noopener" href="https://wa.me/${telWa(tel)}?text=${encodeURIComponent(msg)}">📲 ${label || 'WhatsApp'}</a>`;
+  function kadEmel(h) {
+    const msg = mesejEmel(h.nama, h.email, h.password);
+    return `<section class="card stack" style="border:2px solid #0FA3A3">
+      <h2>✅ Akaun emel disediakan: ${esc(h.nama)}</h2>
+      <div class="small">Emel: <b>${esc(h.email)}</b><br>Kata laluan sementara: <b>${esc(h.password)}</b> <span class="muted tiny">(dipaparkan sekali sahaja)</span></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">${butangWa(msg, '', 'Hantar melalui WhatsApp')}
+        <button class="btn sm" data-a="salinPin" data-t="${esc(msg)}">Salin mesej</button>
+        <button class="btn sm" data-a="tutupEmel">Tutup</button></div></section>`;
+  }
   function borangKerja(p, opts) {
     const u = me(); const o = opts || {};
     const ro = o.readonly ? 'disabled' : '';
@@ -1725,6 +1741,7 @@
   const PK_ACTIONS = {
     bukaPekerja(el) { state.hasilPin = null; location.hash = '#a-pekerja-p-' + el.dataset.id; },
     tutupPin() { state.hasilPin = null; render(); },
+    tutupEmel() { state.hasilEmel = null; render(); },
     async salinPin(el) { try { await navigator.clipboard.writeText(el.dataset.t); toast('Mesej disalin'); } catch (e) { toast('Tidak dapat menyalin. Guna butang WhatsApp.'); } },
     async pinPekerja(el) {
       const p = db.users.find((x) => x.id === el.dataset.id);
@@ -2064,7 +2081,7 @@
       const field = false;
       if (field && (!normId(fd.staffId) || !/^[0-9]{6}$/.test(fd.pin || ''))) { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast('Pekerja / Penyelia perlukan ID pekerja dan PIN 6 digit'); return; }
       if (!field && (!fd.email || (fd.password || '').length < 6)) { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast('Pengurusan perlukan emel dan kata laluan (sekurang-kurangnya 6 aksara)'); return; }
-      (field ? createPinUser(fd) : createCloudUser(fd)).then(() => { toast(field ? `${fd.nama} didaftarkan. ID ${normId(fd.staffId)}, PIN seperti ditetapkan.` : `${fd.nama} didaftarkan. Beri emel dan kata laluan sementara kepadanya.`); render(); })
+      (field ? createPinUser(fd) : createCloudUser(fd)).then(() => { if (!field) state.hasilEmel = { nama: fd.nama.trim(), email: fd.email.trim().toLowerCase(), password: fd.password }; toast(field ? `${fd.nama} didaftarkan. ID ${normId(fd.staffId)}, PIN seperti ditetapkan.` : `${fd.nama} didaftarkan. Beri emel dan kata laluan sementara kepadanya.`); render(); })
         .catch((e) => { btn.disabled = false; btn.textContent = 'Tambah pengguna'; toast(authMsg(e)); });
     },
     login(fd, form) {
