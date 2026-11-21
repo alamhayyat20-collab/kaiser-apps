@@ -339,7 +339,7 @@
     if (state.screen === 'loading') return loginShell('<div class="muted">Memuatkan…</div>');
     if (state.screen === 'wrongapp') return loginShell(wrongAppMsg());
     if (state.screen === 'pertama') return viewPertama();
-    if (MESEJ_SEKAT[state.screen]) return loginShell(`<div class="notice bad">${MESEJ_SEKAT[state.screen]}</div><button class="btn" data-a="logout">Log keluar</button>`);
+    if (MESEJ_SEKAT[state.screen]) return loginShell(`<div class="notice bad">${MESEJ_SEKAT[state.screen]}${state.screen === 'perantiLain' && state.sekatInfo ? `<div class="small" style="margin-top:6px">${esc(state.sekatInfo)}</div>` : ''}</div><button class="btn" data-a="logout">Log keluar</button>`);
     if (state.screen === 'bootstrap' && APP === 'pekerja') return loginShell('<div class="notice bad">Sistem belum disediakan. Pengarah perlu log masuk ke Apps Pengurusan dahulu.</div><button class="btn" data-a="logout">Log keluar</button>');
     if (state.screen === 'bootstrap') return loginShell(`<div class="card stack"><h2>Sediakan sistem</h2>
       <div class="small">Anda pengguna pertama (${esc(state.authUser.email)}). Akaun ini akan didaftarkan sebagai <b>Pengarah</b>, dan anda boleh menambah pengguna lain dalam Tetapan.</div>
@@ -1683,7 +1683,7 @@
   async function semakPeranti(prof) {
     const dev = perantiId();
     const pr = prof.akaunApps && prof.akaunApps.peranti;
-    if (pr && pr.id && pr.id !== dev) return 'perantiLain';
+    if (pr && pr.id && pr.id !== dev) { state.sekatInfo = `Dikunci pada: ${pr.nama || 'telefon lain'} sejak ${new Date(pr.masa).toLocaleDateString('ms-MY')}.`; return 'perantiLain'; }
     const d = await fs.collection('peranti').doc(dev).get();
     if (d.exists && d.data().profil !== prof.id) return 'perantiMilikLain';
     if (!pr || !pr.id) {
@@ -1709,7 +1709,7 @@
   }
   const MESEJ_SEKAT = {
     tamat: 'PIN sementara anda sudah <b>tamat tempoh</b> (7 hari). Minta pengurus atau Pengarah set semula PIN.',
-    perantiLain: 'Akaun anda <b>dikunci pada telefon lain</b>. Jika anda menukar telefon, minta pengurus tekan <b>Lepaskan telefon</b>.',
+    perantiLain: 'Akaun anda <b>dikunci pada telefon lain</b>. Jika anda menukar telefon, memasang semula apps atau mengosongkan data pelayar, minta pengurus tekan <b>Lepaskan telefon</b> dalam profil anda.',
     perantiMilikLain: 'Telefon ini sudah <b>didaftarkan untuk pekerja lain</b>. Satu telefon untuk satu pekerja. Hubungi pengurus.',
   };
 
