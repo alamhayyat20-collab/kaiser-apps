@@ -1480,7 +1480,7 @@
     const w = p.waris || {};
     return `<div class="grid-auto">
       <label class="f">Nama penuh<input class="i" name="nama" value="${esc(p.nama)}" required ${ro}></label>
-      <label class="f">ID pekerja<input class="i" name="staffId" value="${esc(p.staffId || '')}" ${o.baru ? 'required' : 'disabled'} style="text-transform:uppercase"></label>
+      <label class="f">ID pekerja<input class="i" name="staffId" value="${esc(p.staffId || '')}" ${o.baru ? 'required data-auto="' + esc(p.staffId || '') + '"' : 'disabled'} style="text-transform:uppercase"></label>
       <label class="f">Jawatan<input class="i" name="jawatan" list="dl-jawatan" value="${esc(p.jawatan || '')}" required ${ro}></label>
       <label class="f">Jenis<select class="i" name="jenis" ${ro}>${['Tetap', 'Kontrak'].map((j) => `<option ${p.jenis === j ? 'selected' : ''}>${j}</option>`).join('')}</select></label>
       <label class="f">Kumpulan<select class="i" name="kumpulanId" required ${ro}><option value="">${kumpulanBoleh.length ? '— pilih —' : '— belum ada kumpulan —'}</option>${kumpulanBoleh.map((k) => `<option value="${k.id}" ${p.kumpulanId === k.id ? 'selected' : ''}>${esc(k.nama)}</option>`).join('')}</select></label>
@@ -1791,6 +1791,9 @@
       const u = me();
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Mendaftar…';
       try {
+        // ID cadangan mungkin lapuk jika senarai pekerja dimuat selepas borang dibuka: guna ID seterusnya.
+        const inp = form.elements.namedItem('staffId');
+        if (inp && inp.dataset.auto && normId(fd.staffId) === inp.dataset.auto && db.users.some((x) => x.staffId === inp.dataset.auto)) fd.staffId = nextStaffId();
         const profil = Object.assign(ambilProfil(fd), { staffId: normId(fd.staffId), peranan: 'pekerja', templat: 'pekerja', kuasa: {}, skopKumpulan: [] });
         if (!profil.kumpulanId) throw { code: 'kaiser/kumpulan', message: 'Pilih kumpulan' };
         let sulit = null;
@@ -1801,7 +1804,15 @@
           profil.peranan = perananDariKuasa({ staffId: profil.staffId, peranan: 'pekerja' }, profil.kuasa);
           const s = ambilSulit(fd); if (Object.keys(s).length) sulit = s;
         }
-        const r = await akaun().daftar(profil, sulit);
+        let r;
+        for (let cuba = 0; ; cuba++) {
+          try { r = await akaun().daftar(profil, sulit); break; } catch (er) {
+            // ID cadangan sudah diambil (senarai belum dimuat sepenuhnya): cuba nombor seterusnya.
+            const m = /^K(\d+)$/.exec(profil.staffId);
+            if (er && er.code === 'kaiser/id-wujud' && inp && inp.dataset.auto && m && cuba < 20) { profil.staffId = 'K' + String(Number(m[1]) + 1).padStart(3, '0'); continue; }
+            throw er;
+          }
+        }
         state.hasilPin = Object.assign({ baru: true, nama: profil.nama, telefon: profil.telefon }, r);
         logP('Daftar pekerja', `${r.staffId} ${profil.nama}`, null, { jawatan: profil.jawatan, kumpulan: kumpulanNama(profil.kumpulanId), templat: profil.templat });
         location.hash = '#a-pekerja-p-' + r.profilId; render(); window.scrollTo(0, 0);
