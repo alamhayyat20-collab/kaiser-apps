@@ -1398,6 +1398,8 @@
     if (a.peranti) return [`Aktif · ${a.peranti.nama || 'telefon'}`, 'diluluskan'];
     return ['Aktif · telefon belum dikunci', 'disahkan'];
   }
+  // Ringkasan kuasa untuk senarai (ikon penuh hanya jika sedikit).
+  const ringkasKuasa = (p) => { if (utama(p)) return '👑'; const n = Object.keys(p.kuasa || {}).filter((k) => p.kuasa[k]).length; return n > 4 ? `<span class="pill p-disahkan">${n} kuasa</span>` : ikonKuasa(p); };
   const statusPill = (p) => { const [t, c] = statusApps(p); return `<span class="pill p-${c}">${esc(t)}</span>`; };
 
   // Log Pengelola: setiap tindakan pemegang kuasa direkod (tidak boleh dipadam).
@@ -1451,7 +1453,7 @@
     return adminShell('pekerja', `<h1>Pekerja</h1>${pekerjaNav('')}
       ${state.hasilPin ? kadPin(state.hasilPin) : ''}
       <div class="card"><div class="tbl"><table style="min-width:560px"><thead><tr><th>Nama</th><th>ID</th><th>Jawatan</th><th>Kumpulan</th><th>Apps</th></tr></thead><tbody>
-      ${list.map((p) => `<tr style="cursor:pointer" data-a="bukaPekerja" data-id="${p.id}"><td><b>${esc(p.nama)}</b> <span title="Kuasa">${ikonKuasa(p)}</span></td><td>${esc(p.staffId || (p.email ? 'emel' : '—'))}</td><td>${esc(p.jawatan || PERANAN[p.peranan] || '')}</td><td>${esc(kumpulanNama(p.kumpulanId))}</td><td>${statusPill(p)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Tiada pekerja.</td></tr>'}
+      ${list.map((p) => `<tr style="cursor:pointer" data-a="bukaPekerja" data-id="${p.id}"><td style="min-width:170px"><b>${esc(p.nama)}</b><br><span title="Kuasa">${ringkasKuasa(p)}</span></td><td>${esc(p.staffId || (p.email ? 'emel' : '—'))}</td><td>${esc(p.jawatan || PERANAN[p.peranan] || '')}</td><td>${esc(kumpulanNama(p.kumpulanId))}</td><td>${statusPill(p)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Tiada pekerja.</td></tr>'}
       </tbody></table></div></div>
       ${bolehDaftar(u) ? '' : '<div class="muted small">Anda tiada kuasa mendaftar pekerja.</div>'}`);
   }
@@ -1481,9 +1483,9 @@
     return `<div class="grid-auto">
       <label class="f">Nama penuh<input class="i" name="nama" value="${esc(p.nama)}" required ${ro}></label>
       <label class="f">ID pekerja<input class="i" name="staffId" value="${esc(p.staffId || '')}" ${o.baru ? 'required data-auto="' + esc(p.staffId || '') + '"' : 'disabled'} style="text-transform:uppercase"></label>
-      <label class="f">Jawatan<input class="i" name="jawatan" list="dl-jawatan" value="${esc(p.jawatan || '')}" required ${ro}></label>
+      <label class="f">Jawatan<input class="i" name="jawatan" list="dl-jawatan" value="${esc(p.jawatan || '')}" ${o.baru ? 'required' : ''} ${ro}></label>
       <label class="f">Jenis<select class="i" name="jenis" ${ro}>${['Tetap', 'Kontrak'].map((j) => `<option ${p.jenis === j ? 'selected' : ''}>${j}</option>`).join('')}</select></label>
-      <label class="f">Kumpulan<select class="i" name="kumpulanId" required ${ro}><option value="">${kumpulanBoleh.length ? '— pilih —' : '— belum ada kumpulan —'}</option>${kumpulanBoleh.map((k) => `<option value="${k.id}" ${p.kumpulanId === k.id ? 'selected' : ''}>${esc(k.nama)}</option>`).join('')}</select></label>
+      <label class="f">Kumpulan<select class="i" name="kumpulanId" ${o.baru ? 'required' : ''} ${ro}><option value="">${kumpulanBoleh.length ? '— pilih —' : '— belum ada kumpulan —'}</option>${kumpulanBoleh.map((k) => `<option value="${k.id}" ${p.kumpulanId === k.id ? 'selected' : ''}>${esc(k.nama)}</option>`).join('')}</select></label>
       <label class="f">No. telefon<input class="i" name="telefon" inputmode="tel" value="${esc(p.telefon || '')}" placeholder="01x-xxxxxxx" ${ro}></label>
       <label class="f">Tarikh mula kerja<input class="i" type="date" name="tarikhMula" value="${esc(p.tarikhMula || '')}" ${ro}></label>
       <label class="f">Waris (nama)<input class="i" name="warisNama" value="${esc(w.nama || '')}" ${ro}></label>
@@ -1517,6 +1519,8 @@
     const u = me(); const p = db.users.find((x) => x.id === id);
     if (!p || !dalamSkopSaya(p)) return viewPekerjaSenarai();
     const boleh = bolehUrus(u, p);
+    // Pengarah Utama boleh mengubah borang kerja sendiri (cth. nama).
+    const bolehBorang = boleh || (utama(u) && p.id === u.id);
     const pr = p.akaunApps && p.akaunApps.peranti;
     const t = templatOf(p.templat);
     const kotak = (x) => `<label class="kuasa" style="display:flex;gap:10px;align-items:flex-start;padding:8px;border:1px solid var(--line,#dde3ea);border-radius:10px">
@@ -1533,8 +1537,8 @@
           <button class="btn ${p.aktif === false ? 'primary' : 'danger'}" data-a="aktifPekerja" data-id="${p.id}">${p.aktif === false ? 'Aktifkan semula' : 'Nyahaktif'}</button></div>` : ''}
       </section>
       <form class="card stack" data-form="profilPekerja" data-id="${p.id}"><h2>Borang kerja</h2>
-        ${borangKerja(p, { readonly: !boleh })}
-        ${boleh ? '<div><button class="btn primary" type="submit">Simpan</button></div>' : ''}
+        ${borangKerja(p, { readonly: !bolehBorang })}
+        ${bolehBorang ? '<div><button class="btn primary" type="submit">Simpan</button></div>' : ''}
       </form>
       <form class="card stack" data-form="kuasaPekerja" data-id="${p.id}"><h2>Kuasa</h2>
         ${utama(p) ? '<div class="small">👑 Pengarah Utama: semua kuasa.</div>' : `
