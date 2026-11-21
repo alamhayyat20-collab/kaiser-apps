@@ -1449,7 +1449,7 @@
       <label class="f">ID pekerja<input class="i" name="staffId" value="${esc(p.staffId || '')}" ${o.baru ? 'required' : 'disabled'} style="text-transform:uppercase"></label>
       <label class="f">Jawatan<input class="i" name="jawatan" list="dl-jawatan" value="${esc(p.jawatan || '')}" required ${ro}></label>
       <label class="f">Jenis<select class="i" name="jenis" ${ro}>${['Tetap', 'Kontrak'].map((j) => `<option ${p.jenis === j ? 'selected' : ''}>${j}</option>`).join('')}</select></label>
-      <label class="f">Kumpulan<select class="i" name="kumpulanId" required ${ro}><option value="">— pilih —</option>${kumpulanBoleh.map((k) => `<option value="${k.id}" ${p.kumpulanId === k.id ? 'selected' : ''}>${esc(k.nama)}</option>`).join('')}</select></label>
+      <label class="f">Kumpulan<select class="i" name="kumpulanId" required ${ro}><option value="">${kumpulanBoleh.length ? '— pilih —' : '— belum ada kumpulan —'}</option>${kumpulanBoleh.map((k) => `<option value="${k.id}" ${p.kumpulanId === k.id ? 'selected' : ''}>${esc(k.nama)}</option>`).join('')}</select></label>
       <label class="f">No. telefon<input class="i" name="telefon" inputmode="tel" value="${esc(p.telefon || '')}" placeholder="01x-xxxxxxx" ${ro}></label>
       <label class="f">Tarikh mula kerja<input class="i" type="date" name="tarikhMula" value="${esc(p.tarikhMula || '')}" ${ro}></label>
       <label class="f">Waris (nama)<input class="i" name="warisNama" value="${esc(w.nama || '')}" ${ro}></label>
@@ -1466,7 +1466,7 @@
     const u = me();
     if (!bolehDaftar(u)) return viewPekerjaSenarai();
     return adminShell('pekerja', `<h1>Daftar pekerja</h1>${pekerjaNav('daftar')}
-      ${kumpulanList().length ? '' : `<div class="notice bad"><b>Belum ada kumpulan kerja.</b> Cipta kumpulan dahulu di <a href="#a-pekerja-jawatan">Jawatan, templat &amp; kumpulan</a>${utama(u) ? ', atau jalankan <a href="#a-tetapan">Migrasi</a> di Tetapan' : ''}.</div>`}
+      ${kumpulanList().length ? '' : `<div class="notice bad stack"><div><b>Belum ada kumpulan kerja dalam sistem.</b> Senarai Kumpulan akan kosong sehingga kumpulan dicipta.</div>${utama(u) ? `<div><button class="btn primary" data-a="kumpulanCadangan">Cipta 10 kumpulan kerja sekarang</button></div><div class="tiny">${esc(KUMPULAN_CADANGAN.join(', '))}</div>` : '<div>Minta Pengarah mencipta kumpulan kerja.</div>'}</div>`}
       <form class="card stack" data-form="daftarPekerja">
         <h2>Borang kerja</h2>
         ${borangKerja({ staffId: nextStaffId(), jenis: 'Tetap', kumpulanId: (kumpulanList().find((k) => dalamSkop(u, k.id)) || {}).id }, { baru: true })}
