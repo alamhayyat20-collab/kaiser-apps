@@ -333,7 +333,7 @@
   }
 
   function loginShell(inner) {
-    return `<div class="login"><div class="logo"><img src="${APP === 'pekerja' ? '' : BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>${inner}${installHint()}</div>`;
+    return `<div class="login"><div class="logo"><img src="${APP === 'pekerja' ? '' : BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>${kadPasang()}${inner}</div>`;
   }
   function viewCloudLogin() {
     if (state.screen === 'loading') return loginShell('<div class="muted">Memuatkan…</div>');
@@ -395,6 +395,7 @@
     <main class="wrap">
       ${navigator.onLine ? '' : '<div class="notice">Luar talian. Rekod disimpan dalam telefon dan akan dihantar bila ada liputan.</div>'}
       ${CLOUD ? '' : '<div class="notice small">Mod demo: data hanya dalam pelayar ini.</div>'}
+      ${sudahDipasang() ? '' : '<button class="btn accent block" data-a="pasang" style="margin-bottom:12px">📲 Pasang apps di skrin telefon</button>'}
       ${back.length ? `<a class="notice bad" href="#rekod" style="text-decoration:none"><b>${back.length} rekod dikembalikan</b> untuk pembetulan. Tekan untuk lihat.</a>` : ''}
       ${pettyBelum.length ? `<a class="notice" href="#permohonan" style="text-decoration:none"><b>Petty cash ${rm(pettyBelum.reduce((a, m) => a + num(m.jumlah), 0))} belum dijelaskan.</b> Hantar resit belian dan pulangkan baki.</a>` : ''}
       <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">
@@ -1270,6 +1271,39 @@
 
   // ---------- Pasang apps, apps salah, tukar PIN ----------
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installEvt = e; scheduleRender(); });
+  // ---------- Pasang apps di skrin utama telefon ----------
+  const sudahDipasang = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  function jenisPelayar() {
+    const ua = navigator.userAgent || '';
+    const ios = /iPhone|iPad|iPod/.test(ua);
+    if (/FBAN|FBAV|Instagram|Line\/|WhatsApp|TikTok|Telegram|; wv\)/.test(ua)) return 'dalamApps';
+    if (ios) return /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua) ? 'iosLain' : 'iosSafari';
+    if (/SamsungBrowser/.test(ua)) return 'samsung';
+    if (/Android/.test(ua)) return 'android';
+    return 'komputer';
+  }
+  function kadPasang() {
+    if (sudahDipasang()) return '';
+    const nama = APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan';
+    return `<div class="card row" style="gap:12px;align-items:center;border:2px solid #0FA3A3;margin-bottom:14px">
+      <img src="${APP === 'pekerja' ? '' : BASE}icon-192.png" alt="" style="width:56px;height:56px;border-radius:12px">
+      <div style="flex:1"><b>Pasang ${nama} di skrin telefon</b><div class="muted tiny">Buka terus dari skrin utama seperti apps biasa.</div></div></div>
+      <button class="btn accent block" data-a="pasang" style="margin-bottom:14px;font-size:17px">📲 Pasang apps di skrin telefon</button>`;
+  }
+  function panduanPasang() {
+    const link = location.href.replace(/#.*$/, '');
+    const salin = `<button class="btn block" data-a="salinLink" data-t="${esc(link)}">Salin link apps</button>`;
+    const p = {
+      dalamApps: `<p><b>Anda membuka link dalam WhatsApp / apps lain.</b> Apps tidak boleh dipasang dari sini.</p><ol><li>Tekan <b>⋮</b> (atas kanan) → <b>Buka dalam Chrome</b> (iPhone: <b>Buka dalam Safari</b>).</li><li>Atau tekan <b>Salin link</b>, buka Chrome / Safari, tampal link.</li><li>Kemudian tekan butang <b>📲 Pasang</b> sekali lagi.</li></ol>${salin}`,
+      iosLain: `<p><b>Di iPhone, apps hanya boleh dipasang melalui Safari.</b></p><ol><li>Tekan <b>Salin link</b>.</li><li>Buka <b>Safari</b> dan tampal link.</li><li>Tekan butang <b>Kongsi</b> ⬆️ (bawah skrin) → <b>Add to Home Screen</b> / <b>Tambah ke Skrin Utama</b> → <b>Add</b>.</li></ol>${salin}`,
+      iosSafari: `<ol><li>Tekan butang <b>Kongsi</b> ⬆️ di bawah skrin.</li><li>Leret ke bawah, pilih <b>Add to Home Screen</b> / <b>Tambah ke Skrin Utama</b>.</li><li>Tekan <b>Add</b> / <b>Tambah</b>. Ikon Kaiser akan muncul di skrin utama.</li></ol>`,
+      samsung: `<ol><li>Tekan <b>☰</b> (bawah kanan).</li><li>Pilih <b>Tambah halaman ke</b> → <b>Skrin utama</b>.</li><li>Tekan <b>Tambah</b>.</li></ol><p class="muted tiny">Atau buka link ini dalam Chrome dan tekan butang Pasang.</p>${salin}`,
+      android: `<ol><li>Tekan <b>⋮</b> (atas kanan Chrome).</li><li>Pilih <b>Pasang apl</b> / <b>Install app</b> (atau <b>Tambah ke skrin utama</b>).</li><li>Tekan <b>Pasang</b>. Ikon Kaiser akan muncul di skrin utama.</li></ol><p class="muted tiny">Jika pilihan itu tiada: tutup Chrome sepenuhnya, buka link semula, dan cuba lagi.</p>`,
+      komputer: `<p>Buka link ini di <b>telefon</b> (Chrome untuk Android, Safari untuk iPhone), kemudian tekan butang Pasang.</p>${salin}`,
+    }[jenisPelayar()];
+    openModal(`<h2>📲 Pasang apps di skrin telefon</h2>${p}<button class="btn primary block" data-a="tutupModal">Faham</button>`);
+  }
+  window.addEventListener('appinstalled', () => { state.installEvt = null; toast('Apps dipasang di skrin utama'); scheduleRender(); });
   function installHint() {
     const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
     if (standalone) return '';
@@ -1886,7 +1920,12 @@
   // ---------- Tindakan ----------
   const A = {
     login(el) { state.userId = el.dataset.id; Store.setUser(state.userId); location.hash = APP === 'urus' ? '#a-dash' : '#home'; render(); },
-    pasang() { if (state.installEvt) { state.installEvt.prompt(); state.installEvt.userChoice.finally(() => { state.installEvt = null; render(); }); } },
+    pasang() {
+      if (state.installEvt) { state.installEvt.prompt(); state.installEvt.userChoice.then((c) => { if (c && c.outcome !== 'accepted') panduanPasang(); }).finally(() => { state.installEvt = null; render(); }); return; }
+      panduanPasang();
+    },
+    tutupModal() { closeModal(); },
+    async salinLink(el) { try { await navigator.clipboard.writeText(el.dataset.t); toast('Link disalin'); } catch (e) { toast(el.dataset.t); } },
     resetPin(el) {
       const u = db.users.find((x) => x.id === el.dataset.id);
       el.closest('td').innerHTML = `<form class="row" data-form="resetPin" data-id="${u.id}" style="gap:6px"><input class="i" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="PIN baharu" required style="max-width:130px"><button class="btn sm primary" type="submit">Simpan</button></form>`;
