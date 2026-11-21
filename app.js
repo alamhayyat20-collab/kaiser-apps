@@ -326,14 +326,14 @@
     const order = ['pekerja', 'penyelia', 'pengurus', 'pengarah', 'akaun'];
     const users = db.users.filter((u) => (APP === 'pekerja' ? isField(u) : isAdmin(u))).sort((a, b) => order.indexOf(a.peranan) - order.indexOf(b.peranan));
     return `<div class="login">
-      <div class="logo"><img src="${BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>
+      <div class="logo"><img src="${APP === 'pekerja' ? '' : BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>
       <div class="notice">Mod demo: data disimpan dalam pelayar ini sahaja. Pilih pengguna untuk masuk.</div>
       <div class="stack">${users.map((u) => `<button class="user" data-a="login" data-id="${u.id}"><span><b>${esc(u.nama)}</b><br><span class="muted small">${PERANAN[u.peranan]}</span></span><span aria-hidden="true">›</span></button>`).join('')}</div>
     </div>`;
   }
 
   function loginShell(inner) {
-    return `<div class="login"><div class="logo"><img src="${BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>${inner}${installHint()}</div>`;
+    return `<div class="login"><div class="logo"><img src="${APP === 'pekerja' ? '' : BASE}icon-192.png" alt="Logo Kaiser"><div><h1>${APP === 'pekerja' ? 'Kaiser Pekerja' : 'Kaiser Pengurusan'}</h1><div class="muted small">${APP === 'pekerja' ? 'Kehadiran, laporan kerja dan permohonan' : 'Pengurusan, akaun dan tuntutan projek'}</div></div></div>${inner}${installHint()}</div>`;
   }
   function viewCloudLogin() {
     if (state.screen === 'loading') return loginShell('<div class="muted">Memuatkan…</div>');
@@ -366,7 +366,7 @@
   function topbar(title, back) {
     const u = me();
     return `<header class="topbar">
-      ${back ? `<a class="iconbtn" href="${back}" aria-label="Kembali">‹</a>` : `<img src="${BASE}icon-64.png" alt="">`}
+      ${back ? `<a class="iconbtn" href="${back}" aria-label="Kembali">‹</a>` : `<img src="${APP === 'pekerja' ? '' : BASE}icon-64.png" alt="">`}
       <div><div class="t">${esc(title)}</div><div class="s">${esc(u.nama)} · ${PERANAN[u.peranan]}</div></div>
       <span class="sp"></span>
       ${CLOUD && u.staffId ? '<a class="iconbtn" href="#pin">PIN</a>' : ''}
